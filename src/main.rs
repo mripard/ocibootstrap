@@ -1,461 +1,456 @@
-#![allow(dead_code)]
-#![allow(missing_docs)]
+#![doc = include_str!("../README.md")]
 
-use std::path::PathBuf;
+use core::str::FromStr;
+use std::{
+    fs::File,
+    io::{BufReader, Write},
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser;
-use log::info;
-use oci_spec::Registry;
-use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
+use container::ContainerSpec;
+use flate2::bufread::GzDecoder;
+use log::{debug, info};
+use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
+use spec::v2::oci::ImageManifest;
+use tar::Archive;
+use types::CompressionAlgorithm;
+use url::Url;
 
-pub mod oci_spec {
-    use std::{
-        fs::File,
-        io::{BufReader, Write},
-        os::unix::fs::MetadataExt,
-        path::{Path, PathBuf},
-    };
+mod config;
+mod container;
+mod spec;
+mod types;
+mod utils;
 
-    use flate2::bufread::GzDecoder;
-    use json_structs::{ImageLayer, ImageManifest};
-    use log::debug;
-    use reqwest::{blocking::Client, StatusCode};
-    use serde::Deserialize;
-    use tar::Archive;
-    use url::Url;
+use crate::{
+    spec::{auth::AuthenticateHeader, v2::oci::TagsListResponse, Digest, Rfc6750AuthResponse},
+    utils::{get_current_oci_arch, get_current_oci_os},
+};
 
-    pub mod json_structs {
-        use std::result::Result;
+const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
 
-        use serde::Deserialize;
+#[derive(thiserror::Error, Debug)]
+enum Error {
+    #[error("Connection Failure")]
+    Connection(#[from] reqwest::Error),
 
-        #[derive(Clone, Copy, Debug)]
-        pub enum DigestAlgorithm {
-            Sha256,
-            Sha512,
-        }
+    #[error("I/O Error")]
+    Io(#[from] std::io::Error),
 
-        #[derive(Clone, Debug, Deserialize)]
-        #[serde(try_from = "String")]
-        pub enum Digest {
-            SHA256(String),
-        }
+    #[error("JSON Parsing Failure")]
+    Json(#[from] serde_json::Error),
 
-        impl Digest {
-            pub(crate) fn algorithm(&self) -> DigestAlgorithm {
-                match self {
-                    Self::SHA256(_) => DigestAlgorithm::Sha256,
-                }
-            }
+    #[error("Configuration File Format Error")]
+    Toml(#[from] toml::de::Error),
 
-            pub(crate) fn as_bytes(&self) -> Vec<u8> {
-                match self {
-                    Self::SHA256(s) => hex::decode(s).unwrap(),
-                }
-            }
+    #[error("Invalid URL")]
+    Url(#[from] url::ParseError),
 
-            pub(crate) fn as_string(&self) -> String {
-                match self {
-                    Self::SHA256(s) => format!("{}", s),
-                }
-            }
+    #[error("Error: {0}")]
+    Custom(String),
+}
 
-            pub(crate) fn as_string_with_algorithm(&self) -> String {
-                match self {
-                    Self::SHA256(s) => format!("sha256:{}", s),
-                }
-            }
-        }
+#[derive(Debug)]
+pub(crate) struct Registry {
+    pub(crate) index_url: Url,
+    pub(crate) auth: Option<AuthenticateHeader>,
+}
 
-        impl TryFrom<String> for Digest {
-            type Error = String;
+impl Registry {
+    pub(crate) fn connect(registry: &str) -> Result<Self, Error> {
+        let repo_base_url = Url::parse(registry)?;
 
-            fn try_from(value: String) -> Result<Self, Self::Error> {
-                let (alg, dig) = value.split_once(':').unwrap();
+        let test_url = repo_base_url.join("/v2/")?;
 
-                Ok(match alg {
-                    "sha256" => Self::SHA256(dig.to_string()),
-                    _ => todo!(),
-                })
-            }
-        }
+        debug!("Trying to connect to {}", test_url.as_str());
 
-        #[derive(Debug, Deserialize)]
-        #[serde(deny_unknown_fields)]
-        pub struct ImageConfig {
-            #[serde(rename = "mediaType")]
-            media_kind: String,
+        let resp = Client::new().get(test_url).send()?;
 
-            size: usize,
-            digest: Digest,
-        }
-
-        #[derive(Clone, Debug, Deserialize)]
-        #[serde(deny_unknown_fields)]
-        pub struct ImageLayer {
-            #[serde(rename = "mediaType")]
-            pub(crate) media_kind: String,
-            pub(crate) size: usize,
-            pub(crate) digest: Digest,
-        }
-
-        #[derive(Debug, Deserialize)]
-        #[serde(deny_unknown_fields)]
-        pub struct ImageManifest {
-            #[serde(rename = "schemaVersion")]
-            pub(crate) schema_version: u8,
-            #[serde(rename = "mediaType")]
-            pub(crate) media_kind: String,
-
-            pub(crate) config: ImageConfig,
-            pub(crate) layers: Vec<ImageLayer>,
-        }
-    }
-
-    type Result<T> = std::result::Result<T, ()>;
-
-    // #[derive(Debug, Deserialize_repr)]
-    // #[repr(u8)]
-    // enum SchemaVersion {
-    //     V2 = 2,
-    // }
-
-    #[derive(Debug, Deserialize)]
-    struct TokenResponse {
-        token: String,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct TagResponse(String);
-
-    #[derive(Debug, Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct TagsListResponse {
-        name: String,
-        tags: Vec<TagResponse>,
-    }
-
-    // #[derive(Debug, Deserialize)]
-    // #[serde(deny_unknown_fields)]
-    // struct ConfigResponse {
-    //     #[serde(rename = "mediaType")]
-    //     media_kind: String,
-    //     size: usize,
-    //     digest: Digest,
-    // }
-
-    // #[derive(Debug, Deserialize)]
-    // #[serde(deny_unknown_fields)]
-    // struct LayerResponse {
-    //     #[serde(rename = "mediaType")]
-    //     media_kind: String,
-    //     size: usize,
-    //     digest: Digest,
-    // }
-
-    // #[derive(Debug, Deserialize)]
-    // #[serde(deny_unknown_fields)]
-    // struct ManifestResponse {
-    //     #[serde(rename = "schemaVersion")]
-    //     schema_version: SchemaVersion,
-
-    //     #[serde(rename = "mediaType")]
-    //     media_kind: String,
-
-    //     config: ConfigResponse,
-    //     layers: Vec<LayerResponse>,
-    // }
-
-    #[derive(Debug)]
-    pub struct Registry {
-        url: Url,
-        auth: bool,
-    }
-
-    impl Registry {
-        pub fn connect(domain: &str) -> Result<Self> {
-            let repo_base_url = Url::parse(domain).unwrap();
-
-            let test_url = repo_base_url.join("/v2/").unwrap();
-
-            debug!("Trying to connect to {}", test_url.as_str());
-
-            let resp = Client::new()
-                .get(test_url)
-                .send()
-                .unwrap()
-                .error_for_status();
-
-            if let Err(e) = resp {
-                let status = e.status().unwrap();
-                if status == StatusCode::UNAUTHORIZED {
-                    debug!("Registry is authenticated.");
-                    Ok(Self {
-                        url: repo_base_url,
-                        auth: true,
-                    })
-                } else {
-                    Err(())
-                }
-            } else {
+        match resp.status() {
+            StatusCode::OK => {
                 debug!("Unauthenticated Registry Found.");
+
                 Ok(Self {
-                    url: repo_base_url,
-                    auth: false,
+                    index_url: repo_base_url,
+                    auth: None,
                 })
             }
-        }
+            StatusCode::UNAUTHORIZED => {
+                debug!("Registry is authenticated.");
 
-        pub fn image<'a>(&'a self, name: &str) -> Result<Image<'a>> {
-            let token = if self.auth {
-                debug!("Registry is authenticated, getting a token.");
+                let www_authenticate = resp.headers()[WWW_AUTHENTICATE].to_str().map_err(|_e| {
+                    Error::Custom(String::from("Couldn't decode header as a String"))
+                })?;
 
-                let mut token_url = self.url.join("token").unwrap();
+                debug!("www-authenticate header is {www_authenticate}");
 
-                token_url.set_query(Some(&format!("scope=repository:{}:pull", name)));
+                let auth = AuthenticateHeader::from_str(www_authenticate)
+                    .map_err(|_e| Error::Custom(String::from("Couldn't parse header.")))?;
 
-                debug!("Token URL: {}", token_url.as_str());
-
-                let client = Client::new()
-                    .get(token_url)
-                    .send()
-                    .unwrap()
-                    .error_for_status()
-                    .unwrap();
-
-                let val: TokenResponse = client.json().unwrap();
-
-                debug!("Got token: {}", val.token);
-
-                Some(val.token)
-            } else {
-                None
-            };
-
-            Ok(Image {
-                registry: self,
-                name: name.to_string(),
-                token,
-            })
-        }
-    }
-
-    #[derive(Debug)]
-    pub struct Image<'a> {
-        registry: &'a Registry,
-        name: String,
-        token: Option<String>,
-    }
-
-    impl Image<'_> {
-        pub fn latest<'a>(&'a self) -> Result<Tag<'a>> {
-            self.tags()?.into_iter().find(|t| t == "latest").ok_or(())
-        }
-
-        pub fn tags<'a>(&'a self) -> Result<Vec<Tag<'a>>> {
-            let url = self
-                .registry
-                .url
-                .join(&format!("/v2/{}/tags/list", self.name))
-                .unwrap();
-
-            debug!("Tags List URL: {}", url.as_str());
-
-            let resp = if let Some(token) = &self.token {
-                Client::new()
-                    .get(url)
-                    .header("Authorization", format!("Bearer {}", token))
-                    .send()
-            } else {
-                Client::new().get(url).send()
-            }
-            .unwrap()
-            .error_for_status()
-            .unwrap();
-
-            let tags = resp
-                .json::<TagsListResponse>()
-                .unwrap()
-                .tags
-                .iter()
-                .map(|t| Tag {
-                    image: self,
-                    tag_name: t.0.clone(),
+                Ok(Self {
+                    index_url: repo_base_url,
+                    auth: Some(auth),
                 })
-                .collect();
-
-            Ok(tags)
-        }
-    }
-
-    #[derive(Debug)]
-    pub struct Tag<'a> {
-        image: &'a Image<'a>,
-        tag_name: String,
-    }
-
-    impl<'a> Tag<'a> {
-        pub fn manifest(&'a self) -> Result<Manifest<'a>> {
-            let url = self
-                .image
-                .registry
-                .url
-                .join(&format!(
-                    "/v2/{}/manifests/{}",
-                    self.image.name, self.tag_name
-                ))
-                .unwrap();
-
-            debug!("Manifest URL: {}", url.as_str());
-
-            let resp = if let Some(token) = &self.image.token {
-                Client::new()
-                    .get(url)
-                    .header("Authorization", format!("Bearer {}", token))
-                    .send()
-            } else {
-                Client::new().get(url).send()
             }
-            .unwrap()
-            .error_for_status()
-            .unwrap();
+            _ => unimplemented!(),
+        }
+    }
 
-            let manifest: ImageManifest = resp.json().unwrap();
-            assert_eq!(manifest.schema_version, 2);
-            assert_eq!(
-                manifest.media_kind,
-                "application/vnd.docker.distribution.manifest.v2+json"
-            );
+    pub(crate) fn image<'a>(&'a self, name: &str) -> Result<Image<'a>, Error> {
+        let token = if let Some(auth) = &self.auth {
+            debug!("Registry is authenticated, getting a token.");
 
-            Ok(Manifest {
-                image: self.image,
-                inner: manifest,
+            let mut token_url = Url::parse(&auth.realm)?;
+            token_url
+                .query_pairs_mut()
+                .clear()
+                .append_pair("scope", &format!("repository:{name}:pull"))
+                .append_pair("service", &auth.service);
+
+            debug!("Token URL: {token_url}");
+
+            let client = Client::new().get(token_url).send()?.error_for_status()?;
+
+            let val: Rfc6750AuthResponse = client.json()?;
+
+            debug!("Got token: {}", val.token);
+
+            Some(val.token)
+        } else {
+            None
+        };
+
+        Ok(Image {
+            registry: self,
+            name: name.to_owned(),
+            token,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Image<'a> {
+    pub(crate) registry: &'a Registry,
+    pub(crate) name: String,
+    pub(crate) token: Option<String>,
+}
+
+impl Image<'_> {
+    pub(crate) fn latest(&self) -> Result<Tag<'_>, Error> {
+        self.tags()?
+            .into_iter()
+            .find(|t| t == "latest")
+            .ok_or(Error::Custom(String::from("Latest tag can't be found")))
+    }
+
+    pub(crate) fn tags(&self) -> Result<Vec<Tag<'_>>, Error> {
+        let url = self
+            .registry
+            .index_url
+            .join(&format!("/v2/{}/tags/list", self.name))?;
+
+        debug!("Tags List URL: {}", url.as_str());
+
+        let text = if let Some(token) = &self.token {
+            Client::new()
+                .get(url)
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+        } else {
+            Client::new().get(url).send()
+        }?
+        .error_for_status()?
+        .text()?;
+
+        debug!("Tags List Response: {text}");
+
+        let resp: TagsListResponse = serde_json::from_str(&text)?;
+        // assert_eq!(resp.name, self.name);
+
+        Ok(resp
+            .tags
+            .iter()
+            .map(|t| Tag {
+                image: self,
+                tag_name: t.clone(),
             })
+            .collect())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Tag<'a> {
+    image: &'a Image<'a>,
+    tag_name: String,
+}
+
+impl<'a> Tag<'a> {
+    pub(crate) fn manifest_for_config(
+        &'a self,
+        arch: &str,
+        os: &str,
+    ) -> Result<TestManifest<'a>, Error> {
+        debug!("Trying to find a manifest for {}, running on {}", arch, os);
+
+        let url = self.image.registry.index_url.join(&format!(
+            "/v2/{}/manifests/{}",
+            self.image.name, self.tag_name
+        ))?;
+
+        debug!("Manifest URL: {}", url.as_str());
+
+        let mut client = Client::new()
+            .get(url)
+            .header("Accept", spec::v2::docker::DISTRIBUTION_MANIFEST_MIME_TYPE)
+            .header("Accept", spec::v2::oci::IMAGE_INDEX_MIME_TYPE)
+            .header("Accept", spec::v2::oci::IMAGE_MANIFEST_MIME_TYPE);
+
+        if let Some(token) = &self.image.token {
+            client = client.header("Authorization", format!("Bearer {token}"));
         }
-    }
 
-    impl PartialEq<String> for Tag<'_> {
-        fn eq(&self, other: &String) -> bool {
-            self.tag_name.eq(other)
-        }
-    }
+        let text = client.send()?.error_for_status()?.text()?;
 
-    impl PartialEq<str> for Tag<'_> {
-        fn eq(&self, other: &str) -> bool {
-            self.tag_name.eq(other)
-        }
-    }
+        debug!("Manifest Response {text}");
 
-    #[derive(Debug)]
-    pub struct Manifest<'a> {
-        image: &'a Image<'a>,
-        inner: ImageManifest,
-    }
+        let resp: spec::Manifest = serde_json::from_str(&text)?;
 
-    impl<'a> Manifest<'a> {
-        pub fn layers(&self) -> Vec<Layer<'a>> {
-            self.inner
-                .layers
-                .clone()
-                .into_iter()
-                .map(|v| Layer {
+        let manifest = match &resp {
+            spec::Manifest::SchemaV2(s) => match s {
+                spec::v2::Manifest::Docker(_) => TestManifest {
                     image: self.image,
-                    inner: v,
-                })
-                .collect()
+                    inner: resp,
+                },
+                spec::v2::Manifest::OciManifest(_) => unimplemented!(),
+                spec::v2::Manifest::OciIndex(m) => {
+                    let manifest = m
+                        .manifests
+                        .iter()
+                        .find_map(|v| {
+                            if let Some(platform) = &v.platform {
+                                debug!(
+                                    "Found manifest for {}, os {}",
+                                    platform.architecture, platform.os
+                                );
+
+                                if platform.architecture != arch || platform.os != os {
+                                    return None;
+                                }
+                            }
+
+                            let digest = &v.digest;
+
+                            let url = match self.image.registry.index_url.join(&format!(
+                                "/v2/{}/manifests/{}",
+                                self.image.name,
+                                digest.as_oci_string()
+                            )) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err::<ImageManifest, Error>(e.into())),
+                            };
+
+                            debug!("Manifest URL {}", url);
+
+                            let mut client = Client::new()
+                                .get(url)
+                                .header("Accept", spec::v2::oci::IMAGE_MANIFEST_MIME_TYPE);
+
+                            if let Some(token) = &self.image.token {
+                                client = client.header("Authorization", format!("Bearer {token}"));
+                            }
+
+                            let resp = match client.send() {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e.into())),
+                            };
+
+                            let resp = match resp.error_for_status() {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e.into())),
+                            };
+
+                            let text = match resp.text() {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e.into())),
+                            };
+
+                            debug!("Manifest Response {}", text);
+
+                            Some(match serde_json::from_str(&text) {
+                                Ok(v) => Ok(v),
+                                Err(e) => Err(e.into()),
+                            })
+                        })
+                        .ok_or(Error::Custom(String::from(
+                            "No manifest found for the requested platform.",
+                        )))??;
+
+                    TestManifest {
+                        image: self.image,
+                        inner: spec::Manifest::SchemaV2(spec::v2::Manifest::OciManifest(manifest)),
+                    }
+                }
+            },
+        };
+
+        Ok(manifest)
+    }
+}
+
+impl PartialEq<String> for Tag<'_> {
+    fn eq(&self, other: &String) -> bool {
+        self.tag_name.eq(other)
+    }
+}
+
+impl PartialEq<str> for Tag<'_> {
+    fn eq(&self, other: &str) -> bool {
+        self.tag_name.eq(other)
+    }
+}
+
+struct TestManifestLayer<'a> {
+    image: &'a Image<'a>,
+    inner: spec::v2::ImageLayer,
+}
+
+impl TestManifestLayer<'_> {
+    fn digest(&self) -> Digest {
+        match &self.inner {
+            spec::v2::ImageLayer::DockerImage(v) => &v.digest,
+            spec::v2::ImageLayer::OciImage(v) => &v.digest,
+        }
+        .clone()
+    }
+
+    fn size(&self) -> usize {
+        match &self.inner {
+            spec::v2::ImageLayer::DockerImage(v) => v.size,
+            spec::v2::ImageLayer::OciImage(v) => v.size,
         }
     }
 
-    #[derive(Debug)]
-    pub struct Layer<'a> {
-        pub(crate) image: &'a Image<'a>,
-        pub(crate) inner: ImageLayer,
+    fn try_from_cache(&self, path: &Path) -> Result<Option<LocalBlob>, Error> {
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        debug!("File already exists, checking its size");
+
+        let metadata = path.metadata()?;
+
+        if metadata.size() != self.size() as u64 {
+            return Err(Error::Custom(String::from("File exists but doesn't match")));
+        }
+
+        Ok(Some(LocalBlob {
+            path: path.to_owned(),
+            compression: self.inner.compression(),
+        }))
     }
 
-    impl Layer<'_> {
-        pub fn fetch(&self) -> LocalBlob {
-            let url = self
-                .image
-                .registry
-                .url
-                .join(&format!(
-                    "/v2/{}/blobs/{}",
-                    self.image.name,
-                    self.inner.digest.as_string_with_algorithm()
-                ))
-                .unwrap();
+    fn fetch(&self) -> Result<LocalBlob, Error> {
+        let url = self.image.registry.index_url.join(&format!(
+            "/v2/{}/blobs/{}",
+            self.image.name,
+            self.digest().as_oci_string()
+        ))?;
 
-            debug!("Blob URL {}", url.as_str());
+        debug!("Blob URL {}", url.as_str());
 
-            let resp = if let Some(token) = &self.image.token {
-                Client::new()
-                    .get(url)
-                    .header("Authorization", format!("Bearer {}", token))
-                    .send()
-            } else {
-                Client::new().get(url).send()
-            }
-            .unwrap()
-            .error_for_status()
-            .unwrap();
+        let resp = if let Some(token) = &self.image.token {
+            Client::new()
+                .get(url)
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+        } else {
+            Client::new().get(url).send()
+        }?
+        .error_for_status()?;
 
-            let dir_path = xdg::BaseDirectories::new()
-                .unwrap()
-                .create_cache_directory(env!("CARGO_CRATE_NAME"))
-                .unwrap();
+        let dir_path = xdg::BaseDirectories::new()
+            .map_err(<xdg::BaseDirectoriesError as Into<std::io::Error>>::into)?
+            .create_cache_directory(env!("CARGO_CRATE_NAME"))?;
 
-            let file_path = dir_path.join(self.inner.digest.as_string());
-            debug!("Blob File Path {}", file_path.display());
+        let file_path = dir_path.join(self.digest().as_string());
+        debug!("Blob File Path {}", file_path.display());
 
-            if file_path.exists() {
-                debug!("File already exists, checking its size");
+        if let Some(v) = self.try_from_cache(&file_path)? {
+            Ok(v)
+        } else {
+            let mut file = File::create_new(&file_path)?;
+            file.write_all(&resp.bytes()?)?;
 
-                let metadata = file_path.metadata().unwrap();
-                assert_eq!(metadata.size() as usize, self.inner.size);
-
-                // debug!("Size match, checking hash.");
-
-                // let mut file = File::open(&file_path).unwrap();
-                // let hash = match self.inner.digest.algorithm() {
-                //     DigestAlgorithm::Sha256 => {
-                //         let mut hasher = Sha256::new();
-                //         std::io::copy(&mut file, &mut hasher).unwrap();
-                //         hasher.finalize()
-                //     }
-                //     DigestAlgorithm::Sha512 => todo!(),
-                // };
-
-                // debug!("Computed Hash is {:X?}", hash.as_slice());
-                // assert_eq!(hash.as_slice(), self.inner.digest.as_bytes());
-
-                return LocalBlob(file_path);
-            }
-
-            let mut file = File::create_new(file_path.clone()).unwrap();
-            file.write_all(&resp.bytes().unwrap()).unwrap();
-
-            LocalBlob(file_path)
+            Ok(LocalBlob {
+                path: file_path,
+                compression: self.inner.compression(),
+            })
         }
     }
+}
 
-    #[derive(Debug)]
-    pub struct LocalBlob(PathBuf);
+#[derive(Debug)]
+struct LocalBlob {
+    path: PathBuf,
+    compression: CompressionAlgorithm,
+}
 
-    impl LocalBlob {
-        pub fn extract(self, target_dir: &Path) {
-            let blob = File::open(&self.0).unwrap();
-            let blob_reader = BufReader::new(blob);
+impl LocalBlob {
+    pub(crate) fn extract(self, target_dir: &Path) -> Result<(), Error> {
+        let blob = File::open(self.path)?;
+        let blob_reader = BufReader::new(blob);
 
-            let tar = GzDecoder::new(blob_reader);
-            let mut archive = Archive::new(tar);
+        let tar = match self.compression {
+            CompressionAlgorithm::None => unimplemented!(),
+            CompressionAlgorithm::Gzip => GzDecoder::new(blob_reader),
+            CompressionAlgorithm::Zstd => unimplemented!(),
+        };
 
-            archive.set_overwrite(true);
-            archive.set_preserve_mtime(true);
-            archive.set_preserve_ownerships(true);
-            archive.set_preserve_permissions(true);
-            archive.set_unpack_xattrs(true);
+        let mut archive = Archive::new(tar);
+        archive.set_overwrite(true);
+        archive.set_preserve_mtime(true);
+        archive.set_preserve_ownerships(true);
+        archive.set_preserve_permissions(true);
+        archive.set_unpack_xattrs(true);
 
-            archive.unpack(target_dir).unwrap();
+        archive.unpack(target_dir)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TestManifest<'a> {
+    image: &'a Image<'a>,
+    inner: spec::Manifest,
+}
+
+impl TestManifest<'_> {
+    fn layers(&self) -> Vec<TestManifestLayer<'_>> {
+        match &self.inner {
+            spec::Manifest::SchemaV2(s) => match s {
+                spec::v2::Manifest::Docker(m) => m
+                    .layers
+                    .clone()
+                    .into_iter()
+                    .map(|v| TestManifestLayer {
+                        image: self.image,
+                        inner: spec::v2::ImageLayer::DockerImage(v),
+                    })
+                    .collect(),
+                spec::v2::Manifest::OciManifest(m) => m
+                    .layers
+                    .clone()
+                    .into_iter()
+                    .map(|l| TestManifestLayer {
+                        image: self.image,
+                        inner: spec::v2::ImageLayer::OciImage(l),
+                    })
+                    .collect(),
+                spec::v2::Manifest::OciIndex(_) => unreachable!(),
+            },
         }
     }
 }
@@ -468,25 +463,12 @@ struct Cli {
 
     #[arg(help = "Output Directory")]
     output_dir: PathBuf,
-
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    verbose: u8,
 }
 
-fn main() {
-    let cli = Cli::parse();
+fn main() -> Result<(), anyhow::Error> {
+    env_logger::init();
 
-    TermLogger::init(
-        match cli.verbose {
-            0 => LevelFilter::Info,
-            1 => LevelFilter::Debug,
-            _ => LevelFilter::Trace,
-        },
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Never,
-    )
-    .unwrap();
+    let cli = Cli::parse();
 
     info!(
         "Running {} {}",
@@ -494,21 +476,23 @@ fn main() {
         env!("CARGO_PKG_VERSION")
     );
 
-    let registry = Registry::connect("https://ghcr.io").unwrap();
+    let container = ContainerSpec::from_container_name(&cli.container)?;
+    let registry = Registry::connect(container.registry_url.as_str())?;
+    let image = registry.image(&container.name)?;
+    let tag = image.latest()?;
+    let manifest = tag.manifest_for_config(get_current_oci_arch(), get_current_oci_os())?;
 
-    let image = registry.image("mripard/fedora-silverblue-image").unwrap();
-    let tag = image.latest().unwrap();
-    let manifest = tag.manifest().unwrap();
-
-    std::fs::create_dir_all(&cli.output_dir).unwrap();
+    std::fs::create_dir_all(&cli.output_dir)?;
 
     for layer in manifest.layers() {
-        info!("Found layer {}", layer.inner.digest.as_string());
-        let blob = layer.fetch();
+        info!("Found layer {}", layer.digest().as_string());
+        let blob = layer.fetch()?;
 
         info!("Blob retrieved, extracting ...");
-        blob.extract(&cli.output_dir);
+        blob.extract(&cli.output_dir)?;
 
         info!("Done");
     }
+
+    Ok(())
 }
