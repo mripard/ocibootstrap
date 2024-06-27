@@ -463,6 +463,9 @@ impl TestManifest<'_> {
 #[derive(Parser)]
 #[command(version, about = "OCI Image to Device Utility")]
 struct Cli {
+    #[arg(short, long, default_value_t, help = "Architecture")]
+    arch: Architecture,
+
     #[arg(help = "Container Name")]
     container: String,
 
@@ -485,7 +488,7 @@ fn main() -> Result<(), anyhow::Error> {
     let registry = Registry::connect(container.registry_url.as_str())?;
     let image = registry.image(&container.name)?;
     let tag = image.latest()?;
-    let manifest = tag.manifest_for_config(Architecture::default(), get_current_oci_os())?;
+    let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
 
     std::fs::create_dir_all(&cli.output_dir)?;
 

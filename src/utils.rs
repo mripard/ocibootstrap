@@ -4,11 +4,13 @@ use log::debug;
 
 use crate::Error;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+#[clap(rename_all = "lower")]
 pub(crate) enum Architecture {
     Arm,
     Arm64,
     X86,
+    #[clap(name = "amd64")]
     X86_64,
 }
 
@@ -39,6 +41,12 @@ impl Default for Architecture {
             "Running on unknown architecture: {}",
             consts::ARCH
         ))
+    }
+}
+
+impl ToString for Architecture {
+    fn to_string(&self) -> String {
+        String::from(self.as_oci_str())
     }
 }
 
