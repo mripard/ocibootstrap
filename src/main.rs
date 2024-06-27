@@ -17,6 +17,7 @@ use spec::v2::oci::ImageManifest;
 use tar::Archive;
 use types::CompressionAlgorithm;
 use url::Url;
+use utils::Architecture;
 
 mod config;
 mod container;
@@ -26,7 +27,7 @@ mod utils;
 
 use crate::{
     spec::{auth::AuthenticateHeader, v2::oci::TagsListResponse, Digest, Rfc6750AuthResponse},
-    utils::{get_current_oci_arch, get_current_oci_os},
+    utils::get_current_oci_os,
 };
 
 const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
@@ -189,10 +190,14 @@ pub(crate) struct Tag<'a> {
 impl<'a> Tag<'a> {
     pub(crate) fn manifest_for_config(
         &'a self,
-        arch: &str,
+        arch: Architecture,
         os: &str,
     ) -> Result<TestManifest<'a>, Error> {
-        debug!("Trying to find a manifest for {}, running on {}", arch, os);
+        debug!(
+            "Trying to find a manifest for {}, running on {}",
+            arch.as_oci_str(),
+            os
+        );
 
         let url = self.image.registry.index_url.join(&format!(
             "/v2/{}/manifests/{}",
@@ -235,7 +240,7 @@ impl<'a> Tag<'a> {
                                     platform.architecture, platform.os
                                 );
 
-                                if platform.architecture != arch || platform.os != os {
+                                if platform.architecture != arch.as_oci_str() || platform.os != os {
                                     return None;
                                 }
                             }
@@ -480,7 +485,7 @@ fn main() -> Result<(), anyhow::Error> {
     let registry = Registry::connect(container.registry_url.as_str())?;
     let image = registry.image(&container.name)?;
     let tag = image.latest()?;
-    let manifest = tag.manifest_for_config(get_current_oci_arch(), get_current_oci_os())?;
+    let manifest = tag.manifest_for_config(Architecture::default(), get_current_oci_os())?;
 
     std::fs::create_dir_all(&cli.output_dir)?;
 
