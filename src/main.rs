@@ -14,6 +14,10 @@ use std::{
 
 use clap::Parser;
 use flate2::bufread::GzDecoder;
+use gpt::{
+    GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
+    EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
+};
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
 use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
@@ -27,17 +31,12 @@ use url::Url;
 
 mod config;
 mod container;
-mod gpt;
 mod spec;
 mod types;
 mod utils;
 
 use crate::{
     container::ContainerSpec,
-    gpt::{
-        GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
-        EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
-    },
     spec::{auth::AuthenticateHeader, v2::oci::TagsListResponse, Digest, Rfc6750AuthResponse},
     types::CompressionAlgorithm,
     utils::{get_current_oci_os, Architecture},

@@ -2,7 +2,6 @@ use alloc::fmt;
 use std::env::consts;
 
 use log::debug;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, Euclid, FromPrimitive, Num};
 
 use crate::Error;
 
@@ -71,29 +70,4 @@ pub(crate) fn convert_rust_os_to_oci(os: &str) -> &str {
 
 pub(crate) fn get_current_oci_os() -> &'static str {
     convert_rust_os_to_oci(consts::OS)
-}
-
-pub(crate) fn round_down<T>(number: T, multiple: T) -> T
-where
-    T: Copy + Num + CheckedDiv + CheckedMul,
-{
-    let div = T::checked_div(&number, &multiple).expect("Division by zero or would overflow");
-
-    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
-}
-
-pub(crate) fn round_up<T>(number: T, multiple: T) -> T
-where
-    T: Copy + Num + CheckedAdd + CheckedMul + Euclid + FromPrimitive,
-{
-    let rem = T::rem_euclid(&number, &multiple);
-
-    if rem.is_zero() {
-        return number;
-    }
-
-    let div = T::checked_add(&T::div_euclid(&number, &multiple), &T::one())
-        .expect("Addition would overflow");
-
-    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
 }

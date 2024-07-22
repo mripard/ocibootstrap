@@ -5,10 +5,8 @@ use std::{
 
 use bit_field::BitField;
 use log::debug;
-use num_traits::ToPrimitive;
-use uuid::{uuid, Builder, Uuid};
-
-use crate::utils::{round_down, round_up};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, Euclid, FromPrimitive, Num, ToPrimitive};
+use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
 
@@ -24,10 +22,34 @@ const GPT_PARTITION_HEADER_SIZE_LBA: usize =
 
 const GPT_PARTITION_ALIGNMENT: usize = 4 << 20;
 
-pub(crate) const EFI_SYSTEM_PART_GUID: Uuid = uuid!("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
-pub(crate) const EXTENDED_BOOTLOADER_PART_GUID: Uuid =
-    uuid!("bc13c2ff-59e6-4262-a352-b275fd6f7172");
-pub(crate) const ROOT_PART_GUID_ARM64: Uuid = uuid!("b921b045-1df0-41c3-af44-4c6f280d3fae");
+pub const EFI_SYSTEM_PART_GUID: Uuid = uuid!("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
+pub const EXTENDED_BOOTLOADER_PART_GUID: Uuid = uuid!("bc13c2ff-59e6-4262-a352-b275fd6f7172");
+pub const ROOT_PART_GUID_ARM64: Uuid = uuid!("b921b045-1df0-41c3-af44-4c6f280d3fae");
+
+fn round_down<T>(number: T, multiple: T) -> T
+where
+    T: Copy + Num + CheckedDiv + CheckedMul,
+{
+    let div = T::checked_div(&number, &multiple).expect("Division by zero or would overflow");
+
+    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
+}
+
+fn round_up<T>(number: T, multiple: T) -> T
+where
+    T: Copy + Num + CheckedAdd + CheckedMul + Euclid + FromPrimitive,
+{
+    let rem = T::rem_euclid(&number, &multiple);
+
+    if rem.is_zero() {
+        return number;
+    }
+
+    let div = T::checked_add(&T::div_euclid(&number, &multiple), &T::one())
+        .expect("Addition would overflow");
+
+    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
+}
 
 fn guid_bytes(uuid: &Uuid) -> [u8; 16] {
     let uuid_fields = uuid.as_fields();
@@ -55,7 +77,7 @@ struct GuidPartitionTableLayout {
 }
 
 #[derive(Debug)]
-pub(crate) struct GuidPartitionTable {
+pub struct GuidPartitionTable {
     builder: GuidPartitionTableBuilder,
 }
 
@@ -204,7 +226,7 @@ impl GuidPartitionTable {
     }
 
     #[allow(clippy::too_many_lines, clippy::unwrap_in_result)]
-    pub(crate) fn write(self, mut file: &File) -> Result<(), io::Error> {
+    pub fn write(self, mut file: &File) -> Result<(), io::Error> {
         let cfg = self.build_gpt_layout(file)?;
 
         let mut mbr_gpt_part = [0u8; 16];
@@ -263,7 +285,7 @@ impl GuidPartitionTable {
 
         let part_entry_size = GPT_PARTITION_ENTRY_SIZE
             .to_u32()
-            .expect("Integer Overflow.");
+            .expect("Integer Overflow (usize to u32).");
         primary_gpt[84..88].copy_from_slice(&part_entry_size.to_le_bytes());
 
         let mut parts: Vec<u8> = Vec::new();
@@ -330,6 +352,7 @@ impl GuidPartitionTable {
             cfg.backup_gpt_header_lba * cfg.block_size,
         ))?;
         file.write_all(&backup_gpt)?;
+
         file.flush()?;
         file.sync_data()?;
 
@@ -338,40 +361,46 @@ impl GuidPartitionTable {
 }
 
 #[derive(Debug)]
-pub(crate) struct GuidPartitionTableBuilder {
+pub struct GuidPartitionTableBuilder {
     guid: Uuid,
     partitions: Vec<GuidPartition>,
 }
 
 impl GuidPartitionTableBuilder {
-    pub(crate) fn new_with_uuid(guid: Uuid) -> Self {
+    pub fn new_with_uuid(guid: Uuid) -> Self {
         Self {
             guid,
             partitions: Vec::new(),
         }
     }
 
-    pub(crate) fn new() -> Self {
-        Self::new_with_uuid(Builder::from_random_bytes(rand::random()).into_uuid())
+    pub fn new() -> Self {
+        Self::new_with_uuid(Uuid::new_v4())
     }
 
-    pub(crate) fn add_partition(mut self, part: GuidPartition) -> Self {
+    pub fn add_partition(mut self, part: GuidPartition) -> Self {
         self.partitions.push(part);
         self
     }
 
-    pub(crate) fn build(self) -> GuidPartitionTable {
+    pub fn build(self) -> GuidPartitionTable {
         GuidPartitionTable { builder: self }
     }
 }
 
+impl Default for GuidPartitionTableBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
-pub(crate) struct GuidPartition {
+pub struct GuidPartition {
     builder: GuidPartitionBuilder,
 }
 
 #[derive(Debug)]
-pub(crate) struct GuidPartitionBuilder {
+pub struct GuidPartitionBuilder {
     type_: Uuid,
     guid: Uuid,
     name: Option<String>,
@@ -380,7 +409,7 @@ pub(crate) struct GuidPartitionBuilder {
 }
 
 impl GuidPartitionBuilder {
-    pub(crate) fn new_with_uuid(part_type: Uuid, part_guid: Uuid) -> Self {
+    pub fn new_with_uuid(part_type: Uuid, part_guid: Uuid) -> Self {
         Self {
             type_: part_type,
             guid: part_guid,
@@ -390,34 +419,31 @@ impl GuidPartitionBuilder {
         }
     }
 
-    pub(crate) fn new(part_type: Uuid) -> Self {
-        Self::new_with_uuid(
-            part_type,
-            Builder::from_random_bytes(rand::random()).into_uuid(),
-        )
+    pub fn new(part_type: Uuid) -> Self {
+        Self::new_with_uuid(part_type, Uuid::new_v4())
     }
 
-    pub(crate) fn size(mut self, size: u64) -> Self {
+    pub fn size(mut self, size: u64) -> Self {
         self.size = Some(size);
         self
     }
 
-    pub(crate) fn name(mut self, name: &str) -> Self {
+    pub fn name(mut self, name: &str) -> Self {
         self.name = Some(name.to_owned());
         self
     }
 
-    pub(crate) fn platform_required(mut self, val: bool) -> Self {
+    pub fn platform_required(mut self, val: bool) -> Self {
         self.bits.set_bit(0, val);
         self
     }
 
-    pub(crate) fn bootable(mut self, val: bool) -> Self {
+    pub fn bootable(mut self, val: bool) -> Self {
         self.bits.set_bit(2, val);
         self
     }
 
-    pub(crate) fn build(self) -> GuidPartition {
+    pub fn build(self) -> GuidPartition {
         GuidPartition { builder: self }
     }
 }
@@ -434,12 +460,9 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        gpt::{
-            GuidPartitionBuilder, GuidPartitionTableBuilder, BLOCK_SIZE, EFI_SYSTEM_PART_GUID,
-            EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA, GPT_PARTITION_ALIGNMENT,
-            GPT_PARTITION_HEADER_SIZE_LBA, MBR_SIZE_LBA,
-        },
-        utils::{round_down, round_up},
+        round_down, round_up, GuidPartitionBuilder, GuidPartitionTableBuilder, BLOCK_SIZE,
+        EFI_SYSTEM_PART_GUID, EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA,
+        GPT_PARTITION_ALIGNMENT, GPT_PARTITION_HEADER_SIZE_LBA, MBR_SIZE_LBA,
     };
 
     const TEMP_FILE_SIZE: u64 = 2 << 30;
@@ -447,7 +470,8 @@ mod tests {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct SfDiskGptPartition {
-        node: PathBuf,
+        #[serde(rename = "node")]
+        _node: PathBuf,
         start: u64,
         size: u64,
         #[serde(rename = "type")]
@@ -554,7 +578,7 @@ mod tests {
             .output()
             .unwrap();
 
-        println!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
 
         let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
 
@@ -642,6 +666,40 @@ mod tests {
         assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
         assert_eq!(part.start, gpt.first_lba);
         assert_eq!(part.size, gpt.last_lba - gpt.first_lba);
+    }
+
+    #[test]
+    fn test_partition_with_uuid() {
+        let file_size = TEMP_FILE_SIZE;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file.as_file().set_len(file_size).unwrap();
+
+        let uuid = Uuid::new_v4();
+        GuidPartitionTableBuilder::new()
+            .add_partition(GuidPartitionBuilder::new_with_uuid(EFI_SYSTEM_PART_GUID, uuid).build())
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.partitions.len(), 1);
+        let part = &gpt.partitions[0];
+        assert_eq!(part.uuid, uuid);
     }
 
     #[test]
