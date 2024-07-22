@@ -7,9 +7,7 @@ use serde_json::Value;
 use url::Url;
 
 use crate::{
-    spec::{v2::MIME_TYPE_KEY, DIGEST_KEY, SCHEMA_VERSION_KEY, SIZE_KEY},
-    types::CompressionAlgorithm,
-    Digest,
+    spec::v2::MIME_TYPE_KEY, CompressionAlgorithm, Digest, DIGEST_KEY, SCHEMA_VERSION_KEY, SIZE_KEY,
 };
 
 const ANNOTATIONS_KEY: &str = "annotations";

@@ -11,7 +11,7 @@ categories = ["development-tools", "embedded", "filesystem", "virtualization"]
 repository = "https://github.com/mripard/ocibootstrap/"
 
 [workspace]
-members = ["ocibootstrap-gpt", "ocibootstrap-types"]
+members = ["ocibootstrap-gpt", "ocibootstrap-registry", "ocibootstrap-types"]
 
 [build-dependencies]
 
@@ -20,34 +20,22 @@ anyhow = { version = "1.0.86", default-features = false, features = [
     "backtrace",
     "std",
 ] }
-base64 = { version = "0.22.1", default-features = false }
 clap = { version = "4.5.4", default-features = false, features = [
     "derive",
     "std",
 ] }
 env_logger = { version = "0.11.3", default-features = false }
-flate2 = { version = "1.0.30", default-features = false, features = [
-    "rust_backend",
-] }
-hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 log = { version = "0.4.21", default-features = false }
 loopdev = { package = "loopdev-3", version = "0.5.1", default-features = false }
-mime = { version = "0.3.17", default-features = false }
 gpt = { package = "ocibootstrap-gpt", path = "./ocibootstrap-gpt" }
 once_cell = { version = "1.19.0", default-features = false }
-our_types = { package = "ocibootstrap-types", path = "./ocibootstrap-types" }
 psl = { version = "2.1.45", default-features = false, features = ["helpers"] }
-reqwest = { version = "0.12.4", features = [
-    "blocking",
-    "default-tls",
-    "json",
-], default-features = false }
+registry = { package = "ocibootstrap-registry", path = "./ocibootstrap-registry" }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.117", default-features = false }
-tar = { version = "0.4.41", default-features = false }
 toml = { version = "0.8.14", default-features = false, features = ["parse"] }
+types = { package = "ocibootstrap-types", path = "./ocibootstrap-types" }
 url = { version = "2.5.2", default-features = false }
-xdg = { version = "2.5.2", default-features = false }
 sys-mount = { version = "3.0.1", default-features = false }
 temp-dir = { version = "0.1.13", default-features = false }
 

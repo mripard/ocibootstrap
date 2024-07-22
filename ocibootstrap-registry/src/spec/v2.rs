@@ -2,7 +2,7 @@ use log::debug;
 use serde::{de, Deserialize};
 use serde_json::Value;
 
-use crate::{spec::SCHEMA_VERSION_KEY, types::CompressionAlgorithm};
+use crate::{CompressionAlgorithm, SCHEMA_VERSION_KEY};
 
 pub(crate) mod docker;
 pub(crate) mod oci;

@@ -1,0 +1,34 @@
+[package]
+name = "ocibootstrap-registry"
+version = "0.1.0"
+authors = ["Maxime Ripard <mripard@kernel.org>"]
+description = "OCI Specification Library"
+edition = "2021"
+readme = "../README.md"
+license-file = "../LICENSE"
+keywords = ["oci", "containers"]
+categories = ["data-structures", "virtualization"]
+repository = "https://github.com/mripard/ocibootstrap/"
+
+[dependencies]
+base64 = { version = "0.22.1", default-features = false }
+flate2 = { version = "1.0.30", default-features = false, features = [
+    "rust_backend",
+] }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
+log = { version = "0.4.21", default-features = false }
+mime = { version = "0.3.17", default-features = false }
+reqwest = { version = "0.12.4", features = [
+    "blocking",
+    "default-tls",
+    "json",
+], default-features = false }
+serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.117", default-features = false }
+tar = { version = "0.4.41", default-features = false }
+types = { package = "ocibootstrap-types", path = "../ocibootstrap-types" }
+url = { version = "2.5.2", default-features = false }
+xdg = { version = "2.5.2", default-features = false }
+
+[dev-dependencies]
+test-log = { version = "0.2.16", default-features = false, features = ["log"] }

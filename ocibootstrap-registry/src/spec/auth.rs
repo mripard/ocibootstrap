@@ -1,36 +1,36 @@
 use core::str::FromStr;
 
 #[derive(Debug)]
-pub(crate) struct AuthenticateHeader {
+pub struct AuthenticateHeader {
     pub(crate) realm: String,
     pub(crate) service: String,
 }
 
 impl FromStr for AuthenticateHeader {
-    type Err = crate::Error;
+    type Err = types::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut realm = None;
         let mut service = None;
 
         if !s.starts_with("Bearer ") {
-            return Err(crate::Error::Custom(String::from(
+            return Err(types::Error::Custom(String::from(
                 "Authentication Header doesn't have the right format",
             )));
         }
 
-        let (_, params) = s.split_once(' ').ok_or(crate::Error::Custom(String::from(
+        let (_, params) = s.split_once(' ').ok_or(types::Error::Custom(String::from(
             "Authentication Header doesn't have the right format",
         )))?;
         for param in params.split(',') {
             let (key, val) = param
                 .split_once('=')
-                .ok_or(crate::Error::Custom(String::from(
+                .ok_or(types::Error::Custom(String::from(
                     "Authentication Header doesn't have the right format",
                 )))?;
 
             if !(val.starts_with('"') && val.ends_with('"')) {
-                return Err(crate::Error::Custom(String::from(
+                return Err(types::Error::Custom(String::from(
                     "Authentication Header doesn't have the right format",
                 )));
             }
@@ -44,11 +44,11 @@ impl FromStr for AuthenticateHeader {
             }
         }
 
-        let realm = realm.ok_or(crate::Error::Custom(String::from(
+        let realm = realm.ok_or(types::Error::Custom(String::from(
             "Authentication Header doesn't have a realm parameter",
         )))?;
 
-        let service = service.ok_or(crate::Error::Custom(String::from(
+        let service = service.ok_or(types::Error::Custom(String::from(
             "Authentication Header doesn't have a service parameter",
         )))?;
 
@@ -59,6 +59,8 @@ impl FromStr for AuthenticateHeader {
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
+
+    use test_log::test;
 
     use crate::spec::auth::AuthenticateHeader;
 

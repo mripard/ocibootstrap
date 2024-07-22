@@ -5,8 +5,7 @@ use serde::{de, Deserialize};
 use serde_json::Value;
 
 use crate::{
-    spec::{v2::MIME_TYPE_KEY, Digest, DIGEST_KEY, SCHEMA_VERSION_KEY, SIZE_KEY},
-    types::CompressionAlgorithm,
+    spec::v2::MIME_TYPE_KEY, CompressionAlgorithm, Digest, DIGEST_KEY, SCHEMA_VERSION_KEY, SIZE_KEY,
 };
 
 #[derive(Clone, Debug)]
