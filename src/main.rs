@@ -20,6 +20,7 @@ use gpt::{
 };
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
+use our_types::Error;
 use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
 use serde::Deserialize;
 use spec::v2::oci::ImageManifest;
@@ -43,27 +44,6 @@ use crate::{
 };
 
 const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
-
-#[derive(thiserror::Error, Debug)]
-enum Error {
-    #[error("Connection Failure")]
-    Connection(#[from] reqwest::Error),
-
-    #[error("I/O Error")]
-    Io(#[from] io::Error),
-
-    #[error("JSON Parsing Failure")]
-    Json(#[from] serde_json::Error),
-
-    #[error("Configuration File Format Error")]
-    Toml(#[from] toml::de::Error),
-
-    #[error("Invalid URL")]
-    Url(#[from] url::ParseError),
-
-    #[error("Error: {0}")]
-    Custom(String),
-}
 
 #[derive(Debug)]
 pub(crate) struct Registry {
