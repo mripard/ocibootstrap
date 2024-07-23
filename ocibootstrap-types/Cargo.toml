@@ -10,6 +10,9 @@ keywords = ["types"]
 categories = ["data-structures"]
 repository = "https://github.com/mripard/ocibootstrap/"
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = { version = "4.5.4", default-features = false, features = [
     "derive",

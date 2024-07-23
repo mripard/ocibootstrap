@@ -10,6 +10,9 @@ keywords = ["gpt", "partition", "uefi"]
 categories = ["embedded", "filesystem", "hardware-support"]
 repository = "https://github.com/mripard/ocibootstrap/"
 
+[lints]
+workspace = true
+
 [dependencies]
 bit_field = { version = "0.10.2", default-features = false }
 crc32fast = { version = "1.4.2", default-features = false }

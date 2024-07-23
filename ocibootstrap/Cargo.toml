@@ -1,0 +1,43 @@
+[package]
+name = "ocibootstrap"
+version = "0.1.0"
+authors = ["Maxime Ripard <mripard@kernel.org>"]
+description = "Bootable Container to SD-Card utility"
+edition = "2021"
+readme = "README.md"
+license-file = "LICENSE"
+keywords = ["embedded", "containers"]
+categories = ["development-tools", "embedded", "filesystem", "virtualization"]
+repository = "https://github.com/mripard/ocibootstrap/"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+
+[dependencies]
+anyhow = { version = "1.0.86", default-features = false, features = [
+    "backtrace",
+    "std",
+] }
+clap = { version = "4.5.4", default-features = false, features = [
+    "derive",
+    "std",
+] }
+env_logger = { version = "0.11.3", default-features = false }
+log = { version = "0.4.21", default-features = false }
+loopdev = { package = "loopdev-3", version = "0.5.1", default-features = false }
+gpt = { package = "ocibootstrap-gpt", path = "../ocibootstrap-gpt" }
+once_cell = { version = "1.19.0", default-features = false }
+psl = { version = "2.1.45", default-features = false, features = ["helpers"] }
+registry = { package = "ocibootstrap-registry", path = "../ocibootstrap-registry" }
+serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.117", default-features = false }
+toml = { version = "0.8.14", default-features = false, features = ["parse"] }
+types = { package = "ocibootstrap-types", path = "../ocibootstrap-types" }
+url = { version = "2.5.2", default-features = false }
+sys-mount = { version = "3.0.1", default-features = false }
+temp-dir = { version = "0.1.13", default-features = false }
+
+[dev-dependencies]
+test-log = { version = "0.2.16", default-features = false, features = ["log"] }

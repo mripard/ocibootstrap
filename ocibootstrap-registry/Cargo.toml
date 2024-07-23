@@ -10,6 +10,9 @@ keywords = ["oci", "containers"]
 categories = ["data-structures", "virtualization"]
 repository = "https://github.com/mripard/ocibootstrap/"
 
+[lints]
+workspace = true
+
 [dependencies]
 base64 = { version = "0.22.1", default-features = false }
 flate2 = { version = "1.0.30", default-features = false, features = [
