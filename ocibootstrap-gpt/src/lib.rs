@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::{
     fs::File,
     io::{self, Seek, Write},
@@ -22,8 +24,19 @@ const GPT_PARTITION_HEADER_SIZE_LBA: usize =
 
 const GPT_PARTITION_ALIGNMENT: usize = 4 << 20;
 
+/// Standard EFI System Partition GUID. See the
+/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// for further details.
 pub const EFI_SYSTEM_PART_GUID: Uuid = uuid!("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
+
+/// Standard Extended Bootloader GUID. See the
+/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// for further details.
 pub const EXTENDED_BOOTLOADER_PART_GUID: Uuid = uuid!("bc13c2ff-59e6-4262-a352-b275fd6f7172");
+
+/// Standard Root Partition GUID for the ARM64/AARCH64 architecture. See the
+/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// for further details.
 pub const ROOT_PART_GUID_ARM64: Uuid = uuid!("b921b045-1df0-41c3-af44-4c6f280d3fae");
 
 fn round_down<T>(number: T, multiple: T) -> T
@@ -76,6 +89,7 @@ struct GuidPartitionTableLayout {
     backup_gpt_header_lba: u64,
 }
 
+/// GUID Partition Table Representation
 #[derive(Debug)]
 pub struct GuidPartitionTable {
     builder: GuidPartitionTableBuilder,
@@ -225,6 +239,16 @@ impl GuidPartitionTable {
         })
     }
 
+    /// Writes a GPT to a file
+    ///
+    /// # Errors
+    ///
+    /// This function will return an [`std::io::Error`] if there's an issue with the Partition Table
+    /// layout, or when accessing the underlying [`File`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if we have an integer overflow in one of the integer type conversions
     #[allow(clippy::too_many_lines, clippy::unwrap_in_result)]
     pub fn write(self, mut file: &File) -> Result<(), io::Error> {
         let cfg = self.build_gpt_layout(file)?;
@@ -360,6 +384,7 @@ impl GuidPartitionTable {
     }
 }
 
+/// A GUID Partition Table Builder Structure
 #[derive(Debug)]
 pub struct GuidPartitionTableBuilder {
     guid: Uuid,
@@ -367,6 +392,8 @@ pub struct GuidPartitionTableBuilder {
 }
 
 impl GuidPartitionTableBuilder {
+    /// Creates a new GUID Partition Table Builder with the specified [`uuid::Uuid`]
+    #[must_use]
     pub fn new_with_uuid(guid: Uuid) -> Self {
         Self {
             guid,
@@ -374,15 +401,22 @@ impl GuidPartitionTableBuilder {
         }
     }
 
+    /// Create a new GUID Partition Table Builder with a random [`uuid::Uuid`] according to the UUID
+    /// v4 specification
+    #[must_use]
     pub fn new() -> Self {
         Self::new_with_uuid(Uuid::new_v4())
     }
 
+    /// Adds a [`GuidPartition`] to the Partition Table
+    #[must_use]
     pub fn add_partition(mut self, part: GuidPartition) -> Self {
         self.partitions.push(part);
         self
     }
 
+    /// Creates a [`GuidPartitionTable`] from our builder
+    #[must_use]
     pub fn build(self) -> GuidPartitionTable {
         GuidPartitionTable { builder: self }
     }
@@ -394,11 +428,13 @@ impl Default for GuidPartitionTableBuilder {
     }
 }
 
+/// A GUID Partition
 #[derive(Debug)]
 pub struct GuidPartition {
     builder: GuidPartitionBuilder,
 }
 
+/// A GUID Partition Builder Structure
 #[derive(Debug)]
 pub struct GuidPartitionBuilder {
     type_: Uuid,
@@ -409,6 +445,9 @@ pub struct GuidPartitionBuilder {
 }
 
 impl GuidPartitionBuilder {
+    /// Creates a new GUID Partition Builder of a specified [`uuid::Uuid`] type and [`uuid::Uuid`]
+    /// GUID
+    #[must_use]
     pub fn new_with_uuid(part_type: Uuid, part_guid: Uuid) -> Self {
         Self {
             type_: part_type,
@@ -419,30 +458,57 @@ impl GuidPartitionBuilder {
         }
     }
 
+    /// Creates a new GUID Partition Builder of a specified [`uuid::Uuid`] type and a random GUID
+    /// according to the UUID v4 specification
+    #[must_use]
     pub fn new(part_type: Uuid) -> Self {
         Self::new_with_uuid(part_type, Uuid::new_v4())
     }
 
+    /// Sets the partition size in bytes. Whenever building the GPT, this size might be increased to
+    /// be aligned to provide optimal device settings, but will never be decreased.
+    ///
+    /// If the size isn't provided, the partition will be made to fill any available space. Only one
+    /// size-less partition is allowed to be part of a [`GuidPartitionTable`].
+    #[must_use]
     pub fn size(mut self, size: u64) -> Self {
         self.size = Some(size);
         self
     }
 
+    /// Sets the partition name
+    #[must_use]
     pub fn name(mut self, name: &str) -> Self {
         self.name = Some(name.to_owned());
         self
     }
 
+    /// Marks the partition as required for the platform to function. See Table 5.8 of the UEFI
+    /// Specification for further explanations.
+    #[must_use]
     pub fn platform_required(mut self, val: bool) -> Self {
         self.bits.set_bit(0, val);
         self
     }
 
+    /// Marks the partition as ignored by the EFI during partition discovery. See Table 5.8 of the
+    /// UEFI Specification for further explanations.
+    #[must_use]
+    pub fn efi_ignore(mut self, val: bool) -> Self {
+        self.bits.set_bit(1, val);
+        self
+    }
+
+    /// Marks the partition as bootable for Legacy BIOS implementations. See Table 5.8 of the UEFI
+    /// Specification for further explanations.
+    #[must_use]
     pub fn bootable(mut self, val: bool) -> Self {
         self.bits.set_bit(2, val);
         self
     }
 
+    /// Creates a [`GuidPartition`] from our builder
+    #[must_use]
     pub fn build(self) -> GuidPartition {
         GuidPartition { builder: self }
     }
