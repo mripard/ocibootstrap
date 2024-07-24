@@ -2,7 +2,7 @@ use url::Url;
 
 use crate::{
     config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
-    Error, DOCKER_HUB_REGISTRY_URL_STR,
+    OciBootstrapError, DOCKER_HUB_REGISTRY_URL_STR,
 };
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub(crate) struct ContainerSpec {
 }
 
 impl ContainerSpec {
-    pub(crate) fn from_container_name(name: &str) -> Result<Self, Error> {
+    pub(crate) fn from_container_name(name: &str) -> Result<Self, OciBootstrapError> {
         let expanded_name = if let Ok(cfg) = CONTAINERS_CFG.as_ref() {
             if let Some(aliases) = cfg.get(CONTAINERS_CFG_ALIASES_KEY) {
                 if let Some(v) = aliases.get(name) {
@@ -34,9 +34,11 @@ impl ContainerSpec {
         };
 
         let mut split_name = expanded_name.split('/');
-        let domain = split_name.nth(0).ok_or(Error::Custom(String::from(
-            "Domain doesn't have the right format",
-        )))?;
+        let domain = split_name
+            .nth(0)
+            .ok_or(OciBootstrapError::Custom(String::from(
+                "Domain doesn't have the right format",
+            )))?;
         if psl::domain(domain.as_bytes()).is_none() {
             return Ok(ContainerSpec {
                 name: expanded_name,

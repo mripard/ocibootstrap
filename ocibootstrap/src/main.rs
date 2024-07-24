@@ -20,7 +20,7 @@ use registry::{Manifest, Registry};
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
 use temp_dir::TempDir;
-use types::{Architecture, Error};
+use types::{Architecture, OciBootstrapError};
 
 mod config;
 mod container;
@@ -155,7 +155,7 @@ impl Drop for MountPoints {
     }
 }
 
-fn find_device_parts(file: &Path) -> Result<Vec<PathBuf>, Error> {
+fn find_device_parts(file: &Path) -> Result<Vec<PathBuf>, OciBootstrapError> {
     #[derive(Debug, Deserialize)]
     struct LsblkPartition {
         path: PathBuf,
@@ -252,6 +252,149 @@ fn join_path(root: &Path, path: &Path) -> Result<PathBuf, io::Error> {
     }
 
     Ok(canonical)
+}
+
+fn create_and_mount_loop_device(file: File) -> Result<MountPoints, OciBootstrapError> {
+    let loop_control = LoopControl::open()?;
+    let loop_device = LoopDevice::create(&loop_control, file)?;
+
+    let temp_dir = TempDir::new()?;
+    let output_dir = temp_dir.path().to_path_buf();
+    debug!("Temp output dir is {}", output_dir.display());
+
+    let mut mount_points = find_device_parts(&loop_device.path())?
+        .into_iter()
+        .enumerate()
+        .map(|(idx, part)| {
+            match idx {
+                0 => {
+                    let output = Command::new("mkfs.vfat").arg(part.as_os_str()).output()?;
+
+                    if !output.status.success() {
+                        unimplemented!();
+                    }
+                }
+                1 | 2 => {
+                    let output = Command::new("mkfs.ext4").arg(part.as_os_str()).output()?;
+
+                    if !output.status.success() {
+                        unimplemented!();
+                    }
+                }
+                _ => unimplemented!(),
+            };
+
+            let mount_point = PathBuf::from(match idx {
+                0 => "/boot/efi",
+                1 => "/boot",
+                2 => "/",
+                _ => unimplemented!(),
+            });
+
+            debug!(
+                "Partition {} Mounted on {}",
+                part.display(),
+                mount_point.display()
+            );
+
+            Ok((part, mount_point))
+        })
+        .collect::<Result<Vec<_>, io::Error>>()?;
+
+    mount_points.sort_by(|a, b| Ord::cmp(&a.1.components().count(), &b.1.components().count()));
+
+    let mounts = mount_points
+        .into_iter()
+        .map(|(part, mount)| {
+            let mount_dir = join_path(&output_dir, &mount)?;
+            MountPoint::new(&part, &mount_dir)
+        })
+        .collect::<Result<Vec<_>, io::Error>>()?;
+
+    Ok(MountPoints {
+        _loopdev: loop_device,
+        dir: temp_dir,
+        mnts: mounts,
+    })
+}
+
+fn write_manifest_to_dir(manifest: &Manifest<'_>, dir: &Path) -> Result<(), OciBootstrapError> {
+    fs::create_dir_all(dir)?;
+
+    for layer in manifest.layers() {
+        info!("Found layer {}", layer.digest().as_string());
+        let blob = layer.fetch()?;
+
+        info!("Blob retrieved, extracting ...");
+        blob.extract(dir)?;
+
+        info!("Done");
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<(), anyhow::Error> {
+    env_logger::init();
+
+    let cli = Cli::parse();
+
+    info!(
+        "Running {} {}",
+        env!("CARGO_CRATE_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let container = ContainerSpec::from_container_name(&cli.container)?;
+    let registry = Registry::connect(container.registry_url.as_str())?;
+    let image = registry.image(&container.name)?;
+    let tag = image.latest()?;
+    let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+
+    if !cli.output.exists() || cli.output.is_dir() {
+        write_manifest_to_dir(&manifest, &cli.output)?;
+    } else if cli.output.is_file() {
+        let mut file = File::options().read(true).write(true).open(&cli.output)?;
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .name(EFI_SYSTEM_PART_NAME)
+                    .size(256 << 20)
+                    .platform_required(true)
+                    .bootable(true)
+                    .build(),
+            )
+            .add_partition(
+                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                    .name(BOOT_PART_NAME)
+                    .size(512 << 20)
+                    .build(),
+            )
+            .add_partition(
+                GuidPartitionBuilder::new(match cli.arch {
+                    Architecture::Arm64 => ROOT_PART_GUID_ARM64,
+                    Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
+                        unimplemented!()
+                    }
+                })
+                .name(ROOT_PART_NAME)
+                .build(),
+            )
+            .build()
+            .write(&file)?;
+        file.flush()?;
+        file.sync_all()?;
+
+        let mounts = create_and_mount_loop_device(file)?;
+        write_manifest_to_dir(&manifest, mounts.dir.path())?;
+
+        drop(mounts);
+    } else {
+        unimplemented!();
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -382,147 +525,4 @@ mod chroot_test {
 
         join_path(&root, &PathBuf::from("canary/canary-test-file.txt")).unwrap_err();
     }
-}
-
-fn create_and_mount_loop_device(file: File) -> Result<MountPoints, Error> {
-    let loop_control = LoopControl::open()?;
-    let loop_device = LoopDevice::create(&loop_control, file)?;
-
-    let temp_dir = TempDir::new()?;
-    let output_dir = temp_dir.path().to_path_buf();
-    debug!("Temp output dir is {}", output_dir.display());
-
-    let mut mount_points = find_device_parts(&loop_device.path())?
-        .into_iter()
-        .enumerate()
-        .map(|(idx, part)| {
-            match idx {
-                0 => {
-                    let output = Command::new("mkfs.vfat").arg(part.as_os_str()).output()?;
-
-                    if !output.status.success() {
-                        unimplemented!();
-                    }
-                }
-                1 | 2 => {
-                    let output = Command::new("mkfs.ext4").arg(part.as_os_str()).output()?;
-
-                    if !output.status.success() {
-                        unimplemented!();
-                    }
-                }
-                _ => unimplemented!(),
-            };
-
-            let mount_point = PathBuf::from(match idx {
-                0 => "/boot/efi",
-                1 => "/boot",
-                2 => "/",
-                _ => unimplemented!(),
-            });
-
-            debug!(
-                "Partition {} Mounted on {}",
-                part.display(),
-                mount_point.display()
-            );
-
-            Ok((part, mount_point))
-        })
-        .collect::<Result<Vec<_>, io::Error>>()?;
-
-    mount_points.sort_by(|a, b| Ord::cmp(&a.1.components().count(), &b.1.components().count()));
-
-    let mounts = mount_points
-        .into_iter()
-        .map(|(part, mount)| {
-            let mount_dir = join_path(&output_dir, &mount)?;
-            MountPoint::new(&part, &mount_dir)
-        })
-        .collect::<Result<Vec<_>, io::Error>>()?;
-
-    Ok(MountPoints {
-        _loopdev: loop_device,
-        dir: temp_dir,
-        mnts: mounts,
-    })
-}
-
-fn write_manifest_to_dir(manifest: &Manifest<'_>, dir: &Path) -> Result<(), Error> {
-    fs::create_dir_all(dir)?;
-
-    for layer in manifest.layers() {
-        info!("Found layer {}", layer.digest().as_string());
-        let blob = layer.fetch()?;
-
-        info!("Blob retrieved, extracting ...");
-        blob.extract(dir)?;
-
-        info!("Done");
-    }
-
-    Ok(())
-}
-
-fn main() -> Result<(), anyhow::Error> {
-    env_logger::init();
-
-    let cli = Cli::parse();
-
-    info!(
-        "Running {} {}",
-        env!("CARGO_CRATE_NAME"),
-        env!("CARGO_PKG_VERSION")
-    );
-
-    let container = ContainerSpec::from_container_name(&cli.container)?;
-    let registry = Registry::connect(container.registry_url.as_str())?;
-    let image = registry.image(&container.name)?;
-    let tag = image.latest()?;
-    let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
-
-    if !cli.output.exists() || cli.output.is_dir() {
-        write_manifest_to_dir(&manifest, &cli.output)?;
-    } else if cli.output.is_file() {
-        let mut file = File::options().read(true).write(true).open(&cli.output)?;
-
-        GuidPartitionTableBuilder::new()
-            .add_partition(
-                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
-                    .name(EFI_SYSTEM_PART_NAME)
-                    .size(256 << 20)
-                    .platform_required(true)
-                    .bootable(true)
-                    .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
-                    .name(BOOT_PART_NAME)
-                    .size(512 << 20)
-                    .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(match cli.arch {
-                    Architecture::Arm64 => ROOT_PART_GUID_ARM64,
-                    Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
-                        unimplemented!()
-                    }
-                })
-                .name(ROOT_PART_NAME)
-                .build(),
-            )
-            .build()
-            .write(&file)?;
-        file.flush()?;
-        file.sync_all()?;
-
-        let mounts = create_and_mount_loop_device(file)?;
-        write_manifest_to_dir(&manifest, mounts.dir.path())?;
-
-        drop(mounts);
-    } else {
-        unimplemented!();
-    }
-
-    Ok(())
 }

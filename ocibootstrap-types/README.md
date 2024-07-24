@@ -1,0 +1,1 @@
+# `OCIBootstrap` Common Types

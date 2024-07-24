@@ -1,36 +1,38 @@
 use core::str::FromStr;
 
 #[derive(Debug)]
-pub struct AuthenticateHeader {
+pub(crate) struct AuthenticateHeader {
     pub(crate) realm: String,
     pub(crate) service: String,
 }
 
 impl FromStr for AuthenticateHeader {
-    type Err = types::Error;
+    type Err = types::OciBootstrapError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut realm = None;
         let mut service = None;
 
         if !s.starts_with("Bearer ") {
-            return Err(types::Error::Custom(String::from(
+            return Err(types::OciBootstrapError::Custom(String::from(
                 "Authentication Header doesn't have the right format",
             )));
         }
 
-        let (_, params) = s.split_once(' ').ok_or(types::Error::Custom(String::from(
-            "Authentication Header doesn't have the right format",
-        )))?;
+        let (_, params) =
+            s.split_once(' ')
+                .ok_or(types::OciBootstrapError::Custom(String::from(
+                    "Authentication Header doesn't have the right format",
+                )))?;
         for param in params.split(',') {
             let (key, val) = param
                 .split_once('=')
-                .ok_or(types::Error::Custom(String::from(
+                .ok_or(types::OciBootstrapError::Custom(String::from(
                     "Authentication Header doesn't have the right format",
                 )))?;
 
             if !(val.starts_with('"') && val.ends_with('"')) {
-                return Err(types::Error::Custom(String::from(
+                return Err(types::OciBootstrapError::Custom(String::from(
                     "Authentication Header doesn't have the right format",
                 )));
             }
@@ -44,11 +46,11 @@ impl FromStr for AuthenticateHeader {
             }
         }
 
-        let realm = realm.ok_or(types::Error::Custom(String::from(
+        let realm = realm.ok_or(types::OciBootstrapError::Custom(String::from(
             "Authentication Header doesn't have a realm parameter",
         )))?;
 
-        let service = service.ok_or(types::Error::Custom(String::from(
+        let service = service.ok_or(types::OciBootstrapError::Custom(String::from(
             "Authentication Header doesn't have a service parameter",
         )))?;
 

@@ -1,9 +1,11 @@
+#![doc = include_str!("../README.md")]
+
+use core::str::FromStr;
 use std::{
     fs::File,
     io::{self, BufReader, Write},
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 use flate2::bufread::GzDecoder;
@@ -11,38 +13,42 @@ use log::debug;
 use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
 use serde::{de, Deserialize};
 use serde_json::Value;
-use spec::v2::oci::{ImageManifest, TagsListResponse};
 use tar::Archive;
-use types::{Architecture, Error};
+use types::{Architecture, OciBootstrapError};
 use url::Url;
 
 mod spec;
-
-pub use crate::spec::auth::AuthenticateHeader;
-use crate::spec::v2;
+use spec::{
+    auth::AuthenticateHeader,
+    v2::{
+        self,
+        oci::{ImageManifest, TagsListResponse},
+    },
+};
 
 const DIGEST_KEY: &str = "digest";
 const SCHEMA_VERSION_KEY: &str = "schemaVersion";
 const SIZE_KEY: &str = "size";
 
 #[derive(Debug, Deserialize)]
-pub struct Rfc6750AuthResponse {
+pub(crate) struct Rfc6750AuthResponse {
     pub(crate) token: String,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum CompressionAlgorithm {
+pub(crate) enum CompressionAlgorithm {
     None,
     Gzip,
     Zstd,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum DigestAlgorithm {
+pub(crate) enum DigestAlgorithm {
     Sha256,
     Sha512,
 }
 
+/// A Digest Representation
 #[derive(Clone, Debug)]
 pub struct Digest {
     digest: DigestAlgorithm,
@@ -50,10 +56,14 @@ pub struct Digest {
 }
 
 impl Digest {
+    /// Returns the digest as a String
+    #[must_use]
     pub fn as_string(&self) -> String {
         hex::encode(&self.bytes)
     }
 
+    /// Returns the digest as a String, with the OCI representation
+    #[must_use]
     pub fn as_oci_string(&self) -> String {
         match self.digest {
             DigestAlgorithm::Sha256 => format!("sha256:{}", self.as_string()),
@@ -121,6 +131,7 @@ impl<'de> Deserialize<'de> for ManifestInner {
     }
 }
 
+/// A Container Registry Representation
 #[derive(Debug)]
 pub struct Registry {
     index_url: Url,
@@ -128,7 +139,12 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn connect(registry: &str) -> Result<Self, Error> {
+    /// Connects to a remote container registry
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the given registry URL is malformed, or if the connection fails.
+    pub fn connect(registry: &str) -> Result<Self, OciBootstrapError> {
         let repo_base_url = Url::parse(registry)?;
 
         let test_url = repo_base_url.join("/v2/")?;
@@ -150,13 +166,14 @@ impl Registry {
                 debug!("Registry is authenticated.");
 
                 let www_authenticate = resp.headers()[WWW_AUTHENTICATE].to_str().map_err(|_e| {
-                    Error::Custom(String::from("Couldn't decode header as a String"))
+                    OciBootstrapError::Custom(String::from("Couldn't decode header as a String"))
                 })?;
 
                 debug!("www-authenticate header is {www_authenticate}");
 
-                let auth = AuthenticateHeader::from_str(www_authenticate)
-                    .map_err(|_e| Error::Custom(String::from("Couldn't parse header.")))?;
+                let auth = AuthenticateHeader::from_str(www_authenticate).map_err(|_e| {
+                    OciBootstrapError::Custom(String::from("Couldn't parse header."))
+                })?;
 
                 Ok(Self {
                     index_url: repo_base_url,
@@ -167,7 +184,12 @@ impl Registry {
         }
     }
 
-    pub fn image<'a>(&'a self, name: &str) -> Result<Image<'a>, Error> {
+    /// Looks up the image name on the registry
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the registry connection fails
+    pub fn image<'a>(&'a self, name: &str) -> Result<Image<'a>, OciBootstrapError> {
         let token = if let Some(auth) = &self.auth {
             debug!("Registry is authenticated, getting a token.");
 
@@ -199,6 +221,7 @@ impl Registry {
     }
 }
 
+/// A Container Image Representation
 #[derive(Debug)]
 pub struct Image<'a> {
     pub(crate) registry: &'a Registry,
@@ -207,14 +230,26 @@ pub struct Image<'a> {
 }
 
 impl Image<'_> {
-    pub fn latest(&self) -> Result<Tag<'_>, Error> {
+    /// Returns the latest tag available for our image
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the connection to the Registry fails, or if it cannot be found
+    pub fn latest(&self) -> Result<Tag<'_>, OciBootstrapError> {
         self.tags()?
             .into_iter()
             .find(|t| t == "latest")
-            .ok_or(Error::Custom(String::from("Latest tag can't be found")))
+            .ok_or(OciBootstrapError::Custom(String::from(
+                "Latest tag can't be found",
+            )))
     }
 
-    pub fn tags(&self) -> Result<Vec<Tag<'_>>, Error> {
+    /// Returns all available tags for our image
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection to the Registry fails
+    pub fn tags(&self) -> Result<Vec<Tag<'_>>, OciBootstrapError> {
         let url = self
             .registry
             .index_url
@@ -247,6 +282,7 @@ impl Image<'_> {
     }
 }
 
+/// A Container Tag Representation
 #[derive(Debug)]
 pub struct Tag<'a> {
     image: &'a Image<'a>,
@@ -254,11 +290,17 @@ pub struct Tag<'a> {
 }
 
 impl<'a> Tag<'a> {
+    /// Returns the image manifest for our tag for the given architecture and OS
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection to the Registry fails, or if no manifest for the given
+    /// platform can be found.
     pub fn manifest_for_config(
         &'a self,
         arch: Architecture,
         os: &str,
-    ) -> Result<Manifest<'a>, Error> {
+    ) -> Result<Manifest<'a>, OciBootstrapError> {
         debug!(
             "Trying to find a manifest for {}, running on {}",
             arch.as_oci_str(),
@@ -274,9 +316,9 @@ impl<'a> Tag<'a> {
 
         let mut client = Client::new()
             .get(url)
-            .header("Accept", spec::v2::docker::DISTRIBUTION_MANIFEST_MIME_TYPE)
-            .header("Accept", spec::v2::oci::IMAGE_INDEX_MIME_TYPE)
-            .header("Accept", spec::v2::oci::IMAGE_MANIFEST_MIME_TYPE);
+            .header("Accept", v2::docker::DISTRIBUTION_MANIFEST_MIME_TYPE)
+            .header("Accept", v2::oci::IMAGE_INDEX_MIME_TYPE)
+            .header("Accept", v2::oci::IMAGE_MANIFEST_MIME_TYPE);
 
         if let Some(token) = &self.image.token {
             client = client.header("Authorization", format!("Bearer {token}"));
@@ -290,12 +332,12 @@ impl<'a> Tag<'a> {
 
         let manifest = match &resp {
             ManifestInner::SchemaV2(s) => match s {
-                spec::v2::Manifest::Docker(_) => Manifest {
+                v2::Manifest::Docker(_) => Manifest {
                     image: self.image,
                     inner: resp,
                 },
-                spec::v2::Manifest::OciManifest(_) => unimplemented!(),
-                spec::v2::Manifest::OciIndex(m) => {
+                v2::Manifest::OciManifest(_) => unimplemented!(),
+                v2::Manifest::OciIndex(m) => {
                     let manifest = m
                         .manifests
                         .iter()
@@ -319,14 +361,16 @@ impl<'a> Tag<'a> {
                                 digest.as_oci_string()
                             )) {
                                 Ok(v) => v,
-                                Err(e) => return Some(Err::<ImageManifest, Error>(e.into())),
+                                Err(e) => {
+                                    return Some(Err::<ImageManifest, OciBootstrapError>(e.into()))
+                                }
                             };
 
                             debug!("Manifest URL {}", url);
 
                             let mut client = Client::new()
                                 .get(url)
-                                .header("Accept", spec::v2::oci::IMAGE_MANIFEST_MIME_TYPE);
+                                .header("Accept", v2::oci::IMAGE_MANIFEST_MIME_TYPE);
 
                             if let Some(token) = &self.image.token {
                                 client = client.header("Authorization", format!("Bearer {token}"));
@@ -354,13 +398,13 @@ impl<'a> Tag<'a> {
                                 Err(e) => Err(e.into()),
                             })
                         })
-                        .ok_or(Error::Custom(String::from(
+                        .ok_or(OciBootstrapError::Custom(String::from(
                             "No manifest found for the requested platform.",
                         )))??;
 
                     Manifest {
                         image: self.image,
-                        inner: ManifestInner::SchemaV2(spec::v2::Manifest::OciManifest(manifest)),
+                        inner: ManifestInner::SchemaV2(v2::Manifest::OciManifest(manifest)),
                     }
                 }
             },
@@ -382,28 +426,34 @@ impl PartialEq<str> for Tag<'_> {
     }
 }
 
+/// A Container Layer Representation
+#[derive(Debug)]
 pub struct ManifestLayer<'a> {
     image: &'a Image<'a>,
-    inner: spec::v2::ImageLayer,
+    inner: v2::ImageLayer,
 }
 
 impl ManifestLayer<'_> {
+    /// Returns the Layer digest
+    #[must_use]
     pub fn digest(&self) -> Digest {
         match &self.inner {
-            spec::v2::ImageLayer::DockerImage(v) => &v.digest,
-            spec::v2::ImageLayer::OciImage(v) => &v.digest,
+            v2::ImageLayer::DockerImage(v) => &v.digest,
+            v2::ImageLayer::OciImage(v) => &v.digest,
         }
         .clone()
     }
 
+    /// Returns the Layer size
+    #[must_use]
     pub fn size(&self) -> usize {
         match &self.inner {
-            spec::v2::ImageLayer::DockerImage(v) => v.size,
-            spec::v2::ImageLayer::OciImage(v) => v.size,
+            v2::ImageLayer::DockerImage(v) => v.size,
+            v2::ImageLayer::OciImage(v) => v.size,
         }
     }
 
-    fn try_from_cache(&self, path: &Path) -> Result<Option<LocalBlob>, Error> {
+    fn try_from_cache(&self, path: &Path) -> Result<Option<LocalBlob>, OciBootstrapError> {
         if !path.exists() {
             return Ok(None);
         }
@@ -413,7 +463,9 @@ impl ManifestLayer<'_> {
         let metadata = path.metadata()?;
 
         if metadata.size() != self.size() as u64 {
-            return Err(Error::Custom(String::from("File exists but doesn't match")));
+            return Err(OciBootstrapError::Custom(String::from(
+                "File exists but doesn't match",
+            )));
         }
 
         Ok(Some(LocalBlob {
@@ -422,7 +474,13 @@ impl ManifestLayer<'_> {
         }))
     }
 
-    pub fn fetch(&self) -> Result<LocalBlob, Error> {
+    /// Fetches the Layer
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection to the Registry fails, or if there's any error accessing
+    /// the local file.
+    pub fn fetch(&self) -> Result<LocalBlob, OciBootstrapError> {
         let url = self.image.registry.index_url.join(&format!(
             "/v2/{}/blobs/{}",
             self.image.name,
@@ -462,6 +520,7 @@ impl ManifestLayer<'_> {
     }
 }
 
+/// Representation of an Image Manifest
 #[derive(Clone, Debug)]
 pub struct Manifest<'a> {
     image: &'a Image<'a>,
@@ -469,33 +528,36 @@ pub struct Manifest<'a> {
 }
 
 impl Manifest<'_> {
+    /// Returns the laryers  part of that Manifest
+    #[must_use]
     pub fn layers(&self) -> Vec<ManifestLayer<'_>> {
         match &self.inner {
             ManifestInner::SchemaV2(s) => match s {
-                spec::v2::Manifest::Docker(m) => m
+                v2::Manifest::Docker(m) => m
                     .layers
                     .clone()
                     .into_iter()
                     .map(|v| ManifestLayer {
                         image: self.image,
-                        inner: spec::v2::ImageLayer::DockerImage(v),
+                        inner: v2::ImageLayer::DockerImage(v),
                     })
                     .collect(),
-                spec::v2::Manifest::OciManifest(m) => m
+                v2::Manifest::OciManifest(m) => m
                     .layers
                     .clone()
                     .into_iter()
                     .map(|l| ManifestLayer {
                         image: self.image,
-                        inner: spec::v2::ImageLayer::OciImage(l),
+                        inner: v2::ImageLayer::OciImage(l),
                     })
                     .collect(),
-                spec::v2::Manifest::OciIndex(_) => unreachable!(),
+                v2::Manifest::OciIndex(_) => unreachable!(),
             },
         }
     }
 }
 
+/// Representation of an OCI Blob stored locally
 #[derive(Debug)]
 pub struct LocalBlob {
     path: PathBuf,
@@ -503,7 +565,12 @@ pub struct LocalBlob {
 }
 
 impl LocalBlob {
-    pub fn extract(self, target_dir: &Path) -> Result<(), Error> {
+    /// Extracts the content of a compressed blob into the given target directory
+    ///
+    /// # Errors
+    ///
+    /// If the backing file cannot be opened, or if it cannot be extracted
+    pub fn extract(self, target_dir: &Path) -> Result<(), OciBootstrapError> {
         let blob = File::open(self.path)?;
         let blob_reader = BufReader::new(blob);
 

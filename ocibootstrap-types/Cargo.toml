@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Maxime Ripard <mripard@kernel.org>"]
 description = "OCIBootstrap Common Types"
 edition = "2021"
-readme = "../README.md"
+readme = "./README.md"
 license-file = "../LICENSE"
 keywords = ["types"]
 categories = ["data-structures"]
@@ -18,7 +18,7 @@ clap = { version = "4.5.4", default-features = false, features = [
     "derive",
     "std",
 ] }
-reqwest = { version = "0.12.4", default-features = false }
+reqwest = { version = "0.12.5", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
 thiserror = { version = "1.0.61", default-features = false }
 toml = { version = "0.8.14", default-features = false }
