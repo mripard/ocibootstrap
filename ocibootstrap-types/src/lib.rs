@@ -141,6 +141,44 @@ pub struct Digest {
 }
 
 impl Digest {
+    /// Creates a new Digest from an algorithm and a hash
+    ///
+    /// # Errors
+    ///
+    /// If the hash isn't encoded in hexadecimal.
+    pub fn new(alg: DigestAlgorithm, id: &str) -> Result<Self, OciBootstrapError> {
+        Ok(Digest {
+            digest: alg,
+            bytes: hex::decode(id).map_err(|e| OciBootstrapError::Custom(e.to_string()))?,
+        })
+    }
+
+    /// Parses an OCI digest representation
+    ///
+    /// # Errors
+    ///
+    /// If the string format doesn't match the specification, or if the digest algorithm isn't
+    /// known.
+    pub fn from_oci_str(id: &str) -> Result<Self, OciBootstrapError> {
+        let (alg, dig) = id
+            .split_once(':')
+            .ok_or(OciBootstrapError::Custom(String::from(
+                "Malformed Digest Representation",
+            )))?;
+
+        let alg = match alg {
+            "sha256" => DigestAlgorithm::Sha256,
+            "sha512" => DigestAlgorithm::Sha512,
+            _ => {
+                return Err(OciBootstrapError::Custom(format!(
+                    "Unknown algorithm {alg}"
+                )))
+            }
+        };
+
+        Self::new(alg, dig)
+    }
+
     /// Returns the raw digest as a hex String
     #[must_use]
     pub fn to_raw_string(&self) -> String {
