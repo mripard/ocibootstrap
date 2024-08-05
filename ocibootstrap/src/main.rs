@@ -322,7 +322,7 @@ fn write_manifest_to_dir(manifest: &Manifest<'_>, dir: &Path) -> Result<(), OciB
     fs::create_dir_all(dir)?;
 
     for layer in manifest.layers() {
-        info!("Found layer {}", layer.digest().as_string());
+        info!("Found layer {}", layer.digest());
         let blob = layer.fetch()?;
 
         info!("Blob retrieved, extracting ...");
