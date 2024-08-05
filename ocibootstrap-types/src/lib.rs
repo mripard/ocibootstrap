@@ -149,14 +149,14 @@ impl Digest {
 
     /// Returns the digest as a String, with the OCI representation
     #[must_use]
-    pub fn as_oci_string(&self) -> String {
+    pub fn to_oci_string(&self) -> String {
         format!("{}:{}", self.digest, self.to_raw_string())
     }
 }
 
 impl fmt::Display for Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.as_oci_string())
+        f.write_str(&self.to_oci_string())
     }
 }
 

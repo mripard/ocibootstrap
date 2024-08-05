@@ -301,7 +301,7 @@ impl<'a> Tag<'a> {
                             let url = match self.image.registry.index_url.join(&format!(
                                 "/v2/{}/manifests/{}",
                                 self.image.name,
-                                digest.as_oci_string()
+                                digest.to_oci_string()
                             )) {
                                 Ok(v) => v,
                                 Err(e) => {
@@ -427,7 +427,7 @@ impl ManifestLayer<'_> {
         let url = self.image.registry.index_url.join(&format!(
             "/v2/{}/blobs/{}",
             self.image.name,
-            self.digest().as_oci_string()
+            self.digest().to_oci_string()
         ))?;
 
         debug!("Blob URL {}", url.as_str());
