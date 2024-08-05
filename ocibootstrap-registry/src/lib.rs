@@ -15,7 +15,7 @@ use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
 use serde::{de, Deserialize};
 use serde_json::Value;
 use tar::Archive;
-use types::{Architecture, OciBootstrapError};
+use types::{Architecture, Digest, OciBootstrapError};
 use url::Url;
 
 mod spec;
@@ -41,64 +41,6 @@ pub(crate) enum CompressionAlgorithm {
     None,
     Gzip,
     Zstd,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum DigestAlgorithm {
-    Sha256,
-    Sha512,
-}
-
-/// A Digest Representation
-#[derive(Clone, Debug)]
-pub struct Digest {
-    digest: DigestAlgorithm,
-    bytes: Vec<u8>,
-}
-
-impl Digest {
-    /// Returns the digest as a String
-    #[must_use]
-    pub fn as_string(&self) -> String {
-        hex::encode(&self.bytes)
-    }
-
-    /// Returns the digest as a String, with the OCI representation
-    #[must_use]
-    pub fn as_oci_string(&self) -> String {
-        match self.digest {
-            DigestAlgorithm::Sha256 => format!("sha256:{}", self.as_string()),
-            DigestAlgorithm::Sha512 => format!("sha512:{}", self.as_string()),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-
-        let (alg, dig) = s.split_once(':').ok_or(de::Error::invalid_value(
-            de::Unexpected::Str(&s),
-            &"a digest with the form $ALGO:$DIGEST",
-        ))?;
-
-        let bytes = hex::decode(dig).map_err(de::Error::custom)?;
-
-        Ok(match alg {
-            "sha256" => Self {
-                digest: DigestAlgorithm::Sha256,
-                bytes,
-            },
-            "sha512" => Self {
-                digest: DigestAlgorithm::Sha512,
-                bytes,
-            },
-            _ => unimplemented!(),
-        })
-    }
 }
 
 #[derive(Clone, Debug)]

@@ -6,6 +6,8 @@ extern crate alloc;
 use alloc::fmt;
 use std::{env::consts, io};
 
+use serde::{de, Deserialize};
+
 /// Representation of an hardware architecture
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
@@ -95,4 +97,66 @@ pub enum OciBootstrapError {
     /// An unknown error occurred
     #[error("Error: {0}")]
     Custom(String),
+}
+
+/// Digest Algorithm Representation
+#[derive(Clone, Copy, Debug)]
+pub enum DigestAlgorithm {
+    /// NSA SHA-2 SHA-256 Algorithm
+    Sha256,
+
+    /// NSA SHA-2 SHA-512 Algorithm
+    Sha512,
+}
+
+/// A Digest Representation
+#[derive(Clone, Debug)]
+pub struct Digest {
+    digest: DigestAlgorithm,
+    bytes: Vec<u8>,
+}
+
+impl Digest {
+    /// Returns the digest as a String
+    #[must_use]
+    pub fn as_string(&self) -> String {
+        hex::encode(&self.bytes)
+    }
+
+    /// Returns the digest as a String, with the OCI representation
+    #[must_use]
+    pub fn as_oci_string(&self) -> String {
+        match self.digest {
+            DigestAlgorithm::Sha256 => format!("sha256:{}", self.as_string()),
+            DigestAlgorithm::Sha512 => format!("sha512:{}", self.as_string()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Digest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        let (alg, dig) = s.split_once(':').ok_or(de::Error::invalid_value(
+            de::Unexpected::Str(&s),
+            &"a digest with the form $ALGO:$DIGEST",
+        ))?;
+
+        let bytes = hex::decode(dig).map_err(de::Error::custom)?;
+
+        Ok(match alg {
+            "sha256" => Self {
+                digest: DigestAlgorithm::Sha256,
+                bytes,
+            },
+            "sha512" => Self {
+                digest: DigestAlgorithm::Sha512,
+                bytes,
+            },
+            _ => unimplemented!(),
+        })
+    }
 }
