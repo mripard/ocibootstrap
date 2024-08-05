@@ -172,6 +172,11 @@ pub struct Image<'a> {
 }
 
 impl Image<'_> {
+    /// Returns the Image name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Returns the latest tag available for our image
     ///
     /// # Errors
