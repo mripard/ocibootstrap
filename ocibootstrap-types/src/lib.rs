@@ -141,16 +141,16 @@ pub struct Digest {
 }
 
 impl Digest {
-    /// Returns the digest as a String
+    /// Returns the raw digest as a hex String
     #[must_use]
-    pub fn as_string(&self) -> String {
+    pub fn to_raw_string(&self) -> String {
         hex::encode(&self.bytes)
     }
 
     /// Returns the digest as a String, with the OCI representation
     #[must_use]
     pub fn as_oci_string(&self) -> String {
-        format!("{}:{}", self.digest, self.as_string())
+        format!("{}:{}", self.digest, self.to_raw_string())
     }
 }
 

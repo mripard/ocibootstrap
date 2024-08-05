@@ -446,7 +446,7 @@ impl ManifestLayer<'_> {
             .map_err(<xdg::BaseDirectoriesError as Into<io::Error>>::into)?
             .create_cache_directory(env!("CARGO_CRATE_NAME"))?;
 
-        let file_path = dir_path.join(self.digest().as_string());
+        let file_path = dir_path.join(self.digest().to_raw_string());
         debug!("Blob File Path {}", file_path.display());
 
         if let Some(v) = self.try_from_cache(&file_path)? {
