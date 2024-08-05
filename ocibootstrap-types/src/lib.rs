@@ -204,24 +204,6 @@ impl<'de> Deserialize<'de> for Digest {
         D: de::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-
-        let (alg, dig) = s.split_once(':').ok_or(de::Error::invalid_value(
-            de::Unexpected::Str(&s),
-            &"a digest with the form $ALGO:$DIGEST",
-        ))?;
-
-        let bytes = hex::decode(dig).map_err(de::Error::custom)?;
-
-        Ok(match alg {
-            "sha256" => Self {
-                digest: DigestAlgorithm::Sha256,
-                bytes,
-            },
-            "sha512" => Self {
-                digest: DigestAlgorithm::Sha512,
-                bytes,
-            },
-            _ => unimplemented!(),
-        })
+        Self::from_oci_str(&s).map_err(de::Error::custom)
     }
 }
