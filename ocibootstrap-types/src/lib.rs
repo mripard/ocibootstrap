@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::fmt;
+use core::str::FromStr;
 use std::{env::consts, io};
 
 use serde::{de, Deserialize};
@@ -109,6 +110,29 @@ pub enum DigestAlgorithm {
     Sha512,
 }
 
+impl FromStr for DigestAlgorithm {
+    type Err = OciBootstrapError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let alg = match s {
+            "sha256" => DigestAlgorithm::Sha256,
+            "sha512" => DigestAlgorithm::Sha512,
+            _ => unimplemented!(),
+        };
+
+        Ok(alg)
+    }
+}
+
+impl fmt::Display for DigestAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Sha256 => "sha256",
+            Self::Sha512 => "sha512",
+        })
+    }
+}
+
 /// A Digest Representation
 #[derive(Clone, Debug)]
 pub struct Digest {
@@ -126,10 +150,7 @@ impl Digest {
     /// Returns the digest as a String, with the OCI representation
     #[must_use]
     pub fn as_oci_string(&self) -> String {
-        match self.digest {
-            DigestAlgorithm::Sha256 => format!("sha256:{}", self.as_string()),
-            DigestAlgorithm::Sha512 => format!("sha512:{}", self.as_string()),
-        }
+        format!("{}:{}", self.digest, self.as_string())
     }
 }
 
