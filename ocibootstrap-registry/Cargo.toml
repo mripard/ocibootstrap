@@ -18,7 +18,6 @@ base64 = { version = "0.22.1", default-features = false }
 flate2 = { version = "1.0.30", default-features = false, features = [
     "rust_backend",
 ] }
-hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 log = { version = "0.4.21", default-features = false }
 mime = { version = "0.3.17", default-features = false }
 reqwest = { version = "0.12.4", features = [
