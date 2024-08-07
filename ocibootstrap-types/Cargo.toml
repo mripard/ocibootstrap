@@ -14,6 +14,7 @@ repository = "https://github.com/mripard/ocibootstrap/"
 workspace = true
 
 [dependencies]
+base64 = { version = "0.22.1", default-features = false }
 clap = { version = "4.5.4", default-features = false, features = [
     "derive",
     "std",

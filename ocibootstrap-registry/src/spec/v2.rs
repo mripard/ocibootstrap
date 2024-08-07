@@ -62,7 +62,7 @@ impl<'de> Deserialize<'de> for ImageLayer {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
-pub(crate) enum Manifest {
+pub enum Manifest {
     Docker(docker::DistributionManifest),
     OciIndex(oci::ImageIndex),
     OciManifest(oci::ImageManifest),

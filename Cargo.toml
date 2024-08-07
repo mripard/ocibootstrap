@@ -4,8 +4,12 @@ members = [
     "ocibootstrap",
     "ocibootstrap-gpt",
     "ocibootstrap-registry",
+    "ocibootstrap-tar-split",
     "ocibootstrap-types",
 ]
+
+[patch.crates-io]
+tar = { path = "../tar-rs" }
 
 [workspace.lints.rust]
 # Groups

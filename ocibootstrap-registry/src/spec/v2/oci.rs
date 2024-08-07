@@ -24,7 +24,7 @@ pub(crate) struct TagsListResponse {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ImageConfig {
-    _digest: Digest,
+    pub(crate) digest: Digest,
     _size: usize,
     _urls: Option<Vec<Url>>,
     _annotations: Option<HashMap<String, String>>,
@@ -125,7 +125,7 @@ impl<'de> Deserialize<'de> for ImageConfig {
         }
 
         Ok(Self {
-            _digest: digest,
+            digest,
             _size: size,
             _urls: urls,
             _annotations: annotations,
@@ -211,9 +211,9 @@ const IMAGE_MANIFEST_CONFIG_KEY: &str = "config";
 const IMAGE_MANIFEST_LAYERS_KEY: &str = "layers";
 
 #[derive(Clone, Debug)]
-pub(crate) struct ImageManifest {
+pub struct ImageManifest {
     _artifact_kind: Option<String>,
-    _config: ImageConfig,
+    pub(crate) config: ImageConfig,
     pub(crate) layers: Vec<ImageLayer>,
     _annotations: Option<HashMap<String, Value>>,
 }
@@ -315,7 +315,7 @@ impl<'de> Deserialize<'de> for ImageManifest {
 
         Ok(Self {
             _artifact_kind: artifact,
-            _config: config,
+            config,
             layers,
             _annotations: annotations,
         })
@@ -417,7 +417,7 @@ pub(crate) const IMAGE_INDEX_MIME_TYPE: &str = "application/vnd.oci.image.index.
 const IMAGE_INDEX_MANIFESTS_KEY: &str = "manifests";
 
 #[derive(Clone, Debug)]
-pub(crate) struct ImageIndex {
+pub struct ImageIndex {
     _artifact_kind: Option<String>,
     pub(crate) manifests: Vec<ImageIndexManifest>,
     _annotations: Option<HashMap<String, String>>,

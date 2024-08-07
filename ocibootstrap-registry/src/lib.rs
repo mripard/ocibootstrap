@@ -17,6 +17,8 @@ use tar::Archive;
 use types::{Architecture, Digest, OciBootstrapError};
 use url::Url;
 
+pub mod json;
+
 mod spec;
 use spec::{
     auth::AuthenticateHeader,
@@ -40,37 +42,6 @@ pub(crate) enum CompressionAlgorithm {
     None,
     Gzip,
     Zstd,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum ManifestInner {
-    SchemaV2(v2::Manifest),
-}
-
-impl<'de> Deserialize<'de> for ManifestInner {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        let value = Value::deserialize(deserializer)?;
-        let map = value
-            .as_object()
-            .ok_or(de::Error::invalid_type(de::Unexpected::Seq, &"a map"))?;
-
-        let schema = map
-            .get(SCHEMA_VERSION_KEY)
-            .ok_or(de::Error::missing_field(SCHEMA_VERSION_KEY))?
-            .as_u64()
-            .ok_or(de::Error::invalid_type(
-                de::Unexpected::Other("something other than an integer"),
-                &"an integer",
-            ))?;
-
-        Ok(match schema {
-            2 => Self::SchemaV2(v2::Manifest::deserialize(value).map_err(de::Error::custom)?),
-            _ => unimplemented!(),
-        })
-    }
 }
 
 /// A Container Registry Representation
@@ -237,6 +208,10 @@ pub struct Tag<'a> {
 }
 
 impl<'a> Tag<'a> {
+    pub fn name(&self) -> &str {
+        &self.tag_name
+    }
+
     /// Returns the image manifest for our tag for the given architecture and OS
     ///
     /// # Errors
@@ -275,10 +250,10 @@ impl<'a> Tag<'a> {
 
         debug!("Manifest Response {text}");
 
-        let resp: ManifestInner = serde_json::from_str(&text)?;
+        let resp: json::Manifest = serde_json::from_str(&text)?;
 
         let manifest = match &resp {
-            ManifestInner::SchemaV2(s) => match s {
+            json::Manifest::SchemaV2(s) => match s {
                 v2::Manifest::Docker(_) => Manifest {
                     image: self.image,
                     inner: resp,
@@ -351,7 +326,7 @@ impl<'a> Tag<'a> {
 
                     Manifest {
                         image: self.image,
-                        inner: ManifestInner::SchemaV2(v2::Manifest::OciManifest(manifest)),
+                        inner: json::Manifest::SchemaV2(v2::Manifest::OciManifest(manifest)),
                     }
                 }
             },
@@ -471,7 +446,7 @@ impl ManifestLayer<'_> {
 #[derive(Clone, Debug)]
 pub struct Manifest<'a> {
     image: &'a Image<'a>,
-    inner: ManifestInner,
+    inner: json::Manifest,
 }
 
 impl Manifest<'_> {
@@ -479,7 +454,7 @@ impl Manifest<'_> {
     #[must_use]
     pub fn layers(&self) -> Vec<ManifestLayer<'_>> {
         match &self.inner {
-            ManifestInner::SchemaV2(s) => match s {
+            json::Manifest::SchemaV2(s) => match s {
                 v2::Manifest::Docker(m) => m
                     .layers
                     .clone()

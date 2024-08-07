@@ -9,26 +9,60 @@ use std::{
     process::Command,
 };
 
-use clap::Parser;
+use base64::{prelude::BASE64_URL_SAFE, Engine};
+use clap::{Parser, Subcommand};
 use gpt::{
     GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
     EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
 };
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
-use registry::{Manifest, Registry};
+use registry::Image;
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
+use tar::Archive;
 use temp_dir::TempDir;
 use types::{Architecture, OciBootstrapError};
 
 mod config;
 mod container;
+mod local;
+mod registry;
 mod utils;
 
-use crate::{container::ContainerSpec, utils::get_current_oci_os};
+use crate::{
+    container::ContainerSpec,
+    local::LocalRegistry,
+    registry::{get_registry, Manifest, Registry},
+    utils::get_current_oci_os,
+};
 
 const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
+
+#[derive(Debug, Subcommand)]
+enum CliSubcommand {
+    Archive {
+        #[arg(help = "Container Name")]
+        container: String,
+
+        #[arg(help = "Output Archive File")]
+        output: PathBuf,
+    },
+    Device {
+        #[arg(help = "Container Name")]
+        container: String,
+
+        #[arg(help = "Output Device File")]
+        output: PathBuf,
+    },
+    Directory {
+        #[arg(help = "Container Name")]
+        container: String,
+
+        #[arg(help = "Output Directory")]
+        output: PathBuf,
+    },
+}
 
 #[derive(Parser)]
 #[command(version, about = "OCI Image to Device Utility")]
@@ -36,11 +70,16 @@ struct Cli {
     #[arg(short, long, default_value_t, help = "Architecture")]
     arch: Architecture,
 
-    #[arg(help = "Container Name")]
-    container: String,
+    #[arg(
+        short,
+        long,
+        default_value_t,
+        help = "Use a local container instead of trying to look it up"
+    )]
+    local: bool,
 
-    #[arg(help = "Output Directory")]
-    output: PathBuf,
+    #[clap(subcommand)]
+    command: CliSubcommand,
 }
 
 const EFI_SYSTEM_PART_NAME: &str = "esp";
@@ -318,15 +357,12 @@ fn create_and_mount_loop_device(file: File) -> Result<MountPoints, OciBootstrapE
     })
 }
 
-fn write_manifest_to_dir(manifest: &Manifest<'_>, dir: &Path) -> Result<(), OciBootstrapError> {
+fn write_manifest_to_dir(manifest: &dyn Manifest, dir: &Path) -> Result<(), OciBootstrapError> {
     fs::create_dir_all(dir)?;
 
     for layer in manifest.layers() {
-        info!("Found layer {}", layer.digest());
-        let blob = layer.fetch()?;
-
-        info!("Blob retrieved, extracting ...");
-        blob.extract(dir)?;
+        info!("Found layer {}, extracting...", layer.digest());
+        layer.extract(dir)?;
 
         info!("Done");
     }
@@ -345,56 +381,122 @@ fn main() -> Result<(), anyhow::Error> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let container = ContainerSpec::from_container_name(&cli.container)?;
-    let registry = Registry::connect(container.registry_url.as_str())?;
-    let image = registry.image(&container.name)?;
-    let tag = image.latest()?;
-    let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+    match cli.command {
+        CliSubcommand::Archive {
+            output: _output,
+            container: _container,
+        } => todo!(),
+        CliSubcommand::Device { output, container } => {
+            if cli.local {
+                todo!()
+            } else {
+                let container_spec = ContainerSpec::from_container_name(&container)?;
+                let registry = get_registry(&container_spec)?.unwrap();
 
-    if !cli.output.exists() || cli.output.is_dir() {
-        write_manifest_to_dir(&manifest, &cli.output)?;
-    } else if cli.output.is_file() {
-        let mut file = File::options().read(true).write(true).open(&cli.output)?;
+                let image = registry.find_image_by_name(&container_spec.name)?.unwrap();
+                let tag = image.latest()?.unwrap();
+                let manifest = tag
+                    .manifest_for_platform(cli.arch, get_current_oci_os())?
+                    .unwrap();
 
-        GuidPartitionTableBuilder::new()
-            .add_partition(
-                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
-                    .name(EFI_SYSTEM_PART_NAME)
-                    .size(256 << 20)
-                    .platform_required(true)
-                    .bootable(true)
-                    .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
-                    .name(BOOT_PART_NAME)
-                    .size(512 << 20)
-                    .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(match cli.arch {
-                    Architecture::Arm64 => ROOT_PART_GUID_ARM64,
-                    Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
-                        unimplemented!()
-                    }
-                })
-                .name(ROOT_PART_NAME)
-                .build(),
-            )
-            .build()
-            .write(&file)?;
-        file.flush()?;
-        file.sync_all()?;
+                let mut file = File::options().read(true).write(true).open(&output)?;
 
-        let mounts = create_and_mount_loop_device(file)?;
-        write_manifest_to_dir(&manifest, mounts.dir.path())?;
+                GuidPartitionTableBuilder::new()
+                    .add_partition(
+                        GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                            .name(EFI_SYSTEM_PART_NAME)
+                            .size(256 << 20)
+                            .platform_required(true)
+                            .bootable(true)
+                            .build(),
+                    )
+                    .add_partition(
+                        GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                            .name(BOOT_PART_NAME)
+                            .size(512 << 20)
+                            .build(),
+                    )
+                    .add_partition(
+                        GuidPartitionBuilder::new(match cli.arch {
+                            Architecture::Arm64 => ROOT_PART_GUID_ARM64,
+                            Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
+                                unimplemented!()
+                            }
+                        })
+                        .name(ROOT_PART_NAME)
+                        .build(),
+                    )
+                    .build()
+                    .write(&file)?;
+                file.flush()?;
+                file.sync_all()?;
 
-        drop(mounts);
-    } else {
-        unimplemented!();
+                let mounts = create_and_mount_loop_device(file)?;
+                write_manifest_to_dir(&manifest, mounts.dir.path())?;
+
+                drop(mounts);
+                return Ok(());
+            }
+        }
+        CliSubcommand::Directory { output, container } => {
+            let container_spec = ContainerSpec::from_container_name(&container)?;
+
+            if !output.exists() {
+                fs::create_dir_all(&output)?;
+            }
+
+            assert!(output.is_dir());
+
+            if cli.local {
+                let registry = LocalRegistry::new()?;
+                let image = registry.image_by_name(&container_spec.to_string()).unwrap();
+
+                info!("Found Image {}", image.name());
+
+                let tag = image.latest().unwrap().unwrap();
+                info!("Found Tag {}", tag.name());
+
+                let manifest = tag
+                    .manifest_for_platform(cli.arch, get_current_oci_os())
+                    .unwrap();
+                todo!();
+
+                // let layers = manifest.layers();
+                // info!("Image has {} layers", layers.len());
+
+                // for layer in layers {
+                //     info!("Top Layer is {}", layer.id());
+
+                //     let reader = layer.archive();
+                //     let mut archive = Archive::new(reader);
+                //     archive.set_overwrite(true);
+                //     archive.set_preserve_mtime(true);
+                //     archive.set_preserve_ownerships(true);
+                //     archive.set_preserve_permissions(true);
+                //     archive.set_unpack_xattrs(true);
+
+                //     archive.unpack(&output).unwrap();
+                // }
+
+                return Ok(());
+            } else {
+                todo!()
+                // let container_spec = ContainerSpec::from_container_name(&container)?;
+                // let registry =
+                //     get_registry(container_spec.registry_url.as_str(), &container_spec.name)?
+                //         .unwrap();
+                // let image = registry.find_image_by_name(&container_spec.name)?.unwrap();
+                // let tag = image.latest()?.unwrap();
+                // let manifest = tag
+                //     .manifest_for_platform(cli.arch, get_current_oci_os())?
+                //     .unwrap();
+
+                // write_manifest_to_dir(&manifest, &output)?;
+
+                // return Ok(());
+            }
+        }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

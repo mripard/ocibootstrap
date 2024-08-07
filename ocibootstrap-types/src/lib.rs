@@ -5,10 +5,11 @@ extern crate alloc;
 use alloc::fmt;
 use std::{env::consts, io, str::FromStr};
 
+use base64::Engine;
 use serde::{de, Deserialize};
 
 /// Representation of an hardware architecture
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum Architecture {
     /// ARM's AARCH32 Architecture
@@ -26,6 +27,20 @@ pub enum Architecture {
 }
 
 impl Architecture {
+    pub fn from_oci_str(s: &str) -> Result<Self, OciBootstrapError> {
+        Ok(match s {
+            "arm" => Self::Arm,
+            "arm64" => Self::Arm64,
+            "x86" => Self::X86,
+            "amd64" => Self::X86_64,
+            _ => {
+                return Err(OciBootstrapError::Custom(format!(
+                    "Unknown architecture: {s}"
+                )))
+            }
+        })
+    }
+
     /// Creates our architecture enum from the Rust architecture name
     ///
     /// # Errors
@@ -167,6 +182,15 @@ impl Digest {
         };
 
         Self::new(alg, dig)
+    }
+
+    pub fn to_oci_base64(&self) -> String {
+        // For some reason, it appears the blobs when stored on the FS are regular base64 encoding
+        // with an extra padding at the beginning
+        format!(
+            "={}",
+            base64::engine::general_purpose::STANDARD.encode(&self.to_oci_string().as_bytes())
+        )
     }
 
     /// Returns the raw digest as a hex String

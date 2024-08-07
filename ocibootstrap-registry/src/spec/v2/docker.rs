@@ -10,7 +10,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct ContainerConfig {
-    _digest: Digest,
+    pub(crate) digest: Digest,
     _size: usize,
 }
 
@@ -62,7 +62,7 @@ impl<'de> Deserialize<'de> for ContainerConfig {
         }
 
         Ok(Self {
-            _digest: digest,
+            digest,
             _size: size,
         })
     }
@@ -134,8 +134,8 @@ const MANIFEST_CONFIG_KEY: &str = "config";
 const MANIFEST_LAYERS_KEY: &str = "layers";
 
 #[derive(Clone, Debug)]
-pub(crate) struct DistributionManifest {
-    _config: ContainerConfig,
+pub struct DistributionManifest {
+    pub(crate) config: ContainerConfig,
     pub(crate) layers: Vec<ImageLayer>,
 }
 
@@ -207,9 +207,6 @@ impl<'de> Deserialize<'de> for DistributionManifest {
             ));
         }
 
-        Ok(Self {
-            _config: config,
-            layers,
-        })
+        Ok(Self { config, layers })
     }
 }

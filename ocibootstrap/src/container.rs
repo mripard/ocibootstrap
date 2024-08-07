@@ -1,4 +1,5 @@
-use url::Url;
+use core::fmt;
+use std::path::Display;
 
 use crate::{
     config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
@@ -7,8 +8,8 @@ use crate::{
 
 #[derive(Debug)]
 pub(crate) struct ContainerSpec {
+    pub(crate) domain: Option<String>,
     pub(crate) name: String,
-    pub(crate) registry_url: Url,
 }
 
 impl ContainerSpec {
@@ -27,12 +28,6 @@ impl ContainerSpec {
             String::from(name)
         };
 
-        let expanded_name = if expanded_name.contains('/') {
-            expanded_name
-        } else {
-            format!("library/{expanded_name}")
-        };
-
         let mut split_name = expanded_name.split('/');
         let domain = split_name
             .nth(0)
@@ -41,34 +36,36 @@ impl ContainerSpec {
             )))?;
         if psl::domain(domain.as_bytes()).is_none() {
             return Ok(ContainerSpec {
+                domain: None,
                 name: expanded_name,
-                registry_url: Url::parse(DOCKER_HUB_REGISTRY_URL_STR)?,
             });
         }
 
-        let domain = if domain == "docker.io" {
-            String::from(DOCKER_HUB_REGISTRY_URL_STR)
-        } else {
-            format!("https://{domain}")
-        };
-
         let container_name = split_name.collect::<Vec<_>>().join("/");
         Ok(ContainerSpec {
+            domain: Some(domain.to_owned()),
             name: container_name,
-            registry_url: Url::parse(&domain)?,
         })
+    }
+}
+
+impl fmt::Display for ContainerSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(domain) = &self.domain {
+            f.write_fmt(format_args!("{}/{}", domain, self.name))
+        } else {
+            f.write_fmt(format_args!("{}", self.name))
+        }
     }
 }
 
 #[cfg(test)]
 mod registry_url_tests {
     use test_log::test;
-    use url::Url;
 
     use crate::{
         config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
         container::ContainerSpec,
-        DOCKER_HUB_REGISTRY_URL_STR,
     };
 
     #[test]
@@ -85,10 +82,7 @@ mod registry_url_tests {
 
         let container = ContainerSpec::from_container_name(container_name).unwrap();
         assert_eq!(container.name, "library/debian");
-        assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
-        );
+        assert_eq!(container.domain, Some(String::from("docker.io")));
     }
 
     #[test]
@@ -104,11 +98,8 @@ mod registry_url_tests {
             .is_none());
 
         let container = ContainerSpec::from_container_name(container_name).unwrap();
-        assert_eq!(container.name, "library/nginx");
-        assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
-        );
+        assert_eq!(container.name, "nginx");
+        assert_eq!(container.domain, None);
     }
 
     #[test]
@@ -116,10 +107,7 @@ mod registry_url_tests {
         let container = ContainerSpec::from_container_name("pytorch/pytorch").unwrap();
 
         assert_eq!(container.name, "pytorch/pytorch");
-        assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
-        );
+        assert_eq!(container.domain, None,);
     }
 
     #[test]
@@ -129,8 +117,8 @@ mod registry_url_tests {
 
         assert_eq!(container.name, "ubi9");
         assert_eq!(
-            container.registry_url,
-            Url::parse("https://registry.access.redhat.com").unwrap()
+            container.domain,
+            Some(String::from("registry.access.redhat.com"))
         );
     }
 }
