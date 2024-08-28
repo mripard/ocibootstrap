@@ -239,6 +239,12 @@ pub struct Tag<'a> {
 }
 
 impl<'a> Tag<'a> {
+    #[must_use]
+    /// Returns the Tag name
+    pub fn name(&self) -> &str {
+        &self.tag_name
+    }
+
     /// Returns the image manifest for our tag for the given architecture and OS
     ///
     /// # Errors
