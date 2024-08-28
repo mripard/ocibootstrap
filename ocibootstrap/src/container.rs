@@ -1,3 +1,5 @@
+use core::fmt;
+
 use url::Url;
 
 use crate::{
@@ -57,6 +59,12 @@ impl ContainerSpec {
             name: container_name,
             registry_url: Url::parse(&domain)?,
         })
+    }
+}
+
+impl fmt::Display for ContainerSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}/{}", self.registry_url, self.name))
     }
 }
 
