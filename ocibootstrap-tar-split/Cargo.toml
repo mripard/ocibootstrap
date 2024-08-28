@@ -1,0 +1,25 @@
+[package]
+name = "ocibootstrap-tar-split"
+version = "0.1.0"
+authors = ["Maxime Ripard <mripard@kernel.org>"]
+description = "tar-split format implementation"
+edition = "2021"
+readme = "./README.md"
+license-file = "../LICENSE"
+categories = ["data-structures", "filesystem", "parsing"]
+keywords = ["oci", "containers", "archives"]
+repository = "https://github.com/mripard/ocibootstrap/"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+crc = { version = "3.2.1", default-features = false }
+flate2 = { version = "1.0.30", default-features = false, features = [
+    "rust_backend",
+] }
+infer = { version = "0.16.0", default-features = false, features = ["std"] }
+log = { version = "0.4.21", default-features = false }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = { version = "1.0.117" }

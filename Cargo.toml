@@ -4,6 +4,7 @@ members = [
     "ocibootstrap",
     "ocibootstrap-gpt",
     "ocibootstrap-registry",
+    "ocibootstrap-tar-split",
     "ocibootstrap-types",
 ]
 
