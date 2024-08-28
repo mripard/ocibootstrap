@@ -9,7 +9,8 @@ use std::{
     process::Command,
 };
 
-use clap::Parser;
+use anyhow::bail;
+use clap::{Parser, Subcommand};
 use gpt::{
     GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
     EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
@@ -30,17 +31,32 @@ use crate::{container::ContainerSpec, utils::get_current_oci_os};
 
 const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
 
+#[derive(Debug, Subcommand)]
+enum CliSubcommand {
+    Device {
+        #[arg(help = "Container Name")]
+        container: String,
+
+        #[arg(help = "Output Device File")]
+        output: PathBuf,
+    },
+    Directory {
+        #[arg(help = "Container Name")]
+        container: String,
+
+        #[arg(help = "Output Directory")]
+        output: PathBuf,
+    },
+}
+
 #[derive(Parser)]
 #[command(version, about = "OCI Image to Device Utility")]
 struct Cli {
     #[arg(short, long, default_value_t, help = "Architecture")]
     arch: Architecture,
 
-    #[arg(help = "Container Name")]
-    container: String,
-
-    #[arg(help = "Output Directory")]
-    output: PathBuf,
+    #[clap(subcommand)]
+    command: CliSubcommand,
 }
 
 const EFI_SYSTEM_PART_NAME: &str = "esp";
@@ -345,56 +361,107 @@ fn main() -> Result<(), anyhow::Error> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let container = ContainerSpec::from_container_name(&cli.container)?;
-    let registry = Registry::connect(container.registry_url.as_str())?;
-    let image = registry.image(&container.name)?;
-    let tag = image.latest()?;
-    let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+    match cli.command {
+        CliSubcommand::Device { output, container } => {
+            let container_spec = ContainerSpec::from_container_name(&container)?;
 
-    if !cli.output.exists() || cli.output.is_dir() {
-        write_manifest_to_dir(&manifest, &cli.output)?;
-    } else if cli.output.is_file() {
-        let mut file = File::options().read(true).write(true).open(&cli.output)?;
+            info!(
+                "Using container {} with output device {}",
+                container_spec,
+                output.display()
+            );
 
-        GuidPartitionTableBuilder::new()
-            .add_partition(
-                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
-                    .name(EFI_SYSTEM_PART_NAME)
-                    .size(256 << 20)
-                    .platform_required(true)
-                    .bootable(true)
+            if !output.exists() {
+                debug!("Output device doesn't exist, creating.");
+                return Err(
+                    io::Error::new(io::ErrorKind::NotFound, "Output Device doesn't exist").into(),
+                );
+            }
+
+            let metadata = output.metadata()?;
+            let file_type = metadata.file_type();
+            if !file_type.is_file() {
+                bail!("Output argument isn't a file");
+            }
+
+            let registry = Registry::connect(container_spec.registry_url.as_str())?;
+            let image = registry.image(&container_spec.name)?;
+            debug!("Found Image {}", image.name());
+
+            let tag = image.latest()?;
+            info!("Found Tag {}", tag.name());
+
+            let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+
+            let mut file = File::options().read(true).write(true).open(&output)?;
+
+            GuidPartitionTableBuilder::new()
+                .add_partition(
+                    GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                        .name(EFI_SYSTEM_PART_NAME)
+                        .size(256 << 20)
+                        .platform_required(true)
+                        .bootable(true)
+                        .build(),
+                )
+                .add_partition(
+                    GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                        .name(BOOT_PART_NAME)
+                        .size(512 << 20)
+                        .build(),
+                )
+                .add_partition(
+                    GuidPartitionBuilder::new(match cli.arch {
+                        Architecture::Arm64 => ROOT_PART_GUID_ARM64,
+                        Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
+                            unimplemented!()
+                        }
+                    })
+                    .name(ROOT_PART_NAME)
                     .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
-                    .name(BOOT_PART_NAME)
-                    .size(512 << 20)
-                    .build(),
-            )
-            .add_partition(
-                GuidPartitionBuilder::new(match cli.arch {
-                    Architecture::Arm64 => ROOT_PART_GUID_ARM64,
-                    Architecture::Arm | Architecture::X86 | Architecture::X86_64 => {
-                        unimplemented!()
-                    }
-                })
-                .name(ROOT_PART_NAME)
-                .build(),
-            )
-            .build()
-            .write(&file)?;
-        file.flush()?;
-        file.sync_all()?;
+                )
+                .build()
+                .write(&file)?;
+            file.flush()?;
+            file.sync_all()?;
 
-        let mounts = create_and_mount_loop_device(file)?;
-        write_manifest_to_dir(&manifest, mounts.dir.path())?;
+            let mounts = create_and_mount_loop_device(file)?;
+            write_manifest_to_dir(&manifest, mounts.dir.path())?;
 
-        drop(mounts);
-    } else {
-        unimplemented!();
+            drop(mounts);
+            Ok(())
+        }
+        CliSubcommand::Directory { output, container } => {
+            let container_spec = ContainerSpec::from_container_name(&container)?;
+
+            info!(
+                "Using container {} with output directory {}",
+                container_spec,
+                output.display()
+            );
+
+            if !output.exists() {
+                debug!("Output directory doesn't exist, creating.");
+                fs::create_dir_all(&output)?;
+            }
+
+            if !output.is_dir() {
+                bail!("Output isn't a directory");
+            }
+
+            let registry = Registry::connect(container_spec.registry_url.as_str())?;
+            let image = registry.image(&container_spec.name)?;
+            debug!("Found Image {}", image.name());
+
+            let tag = image.latest()?;
+            info!("Found Tag {}", tag.name());
+
+            let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+
+            write_manifest_to_dir(&manifest, &output)?;
+            Ok(())
+        }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
