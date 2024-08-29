@@ -15,7 +15,7 @@ use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
 use serde::{de, Deserialize};
 use serde_json::Value;
 use tar::Archive;
-use types::{Architecture, Digest, OciBootstrapError};
+use types::{Architecture, Digest, OciBootstrapError, OperatingSystem};
 use url::Url;
 
 mod spec;
@@ -254,7 +254,7 @@ impl<'a> Tag<'a> {
     pub fn manifest_for_config(
         &'a self,
         arch: Architecture,
-        os: &str,
+        os: OperatingSystem,
     ) -> Result<Manifest<'a>, OciBootstrapError> {
         debug!(
             "Trying to find a manifest for {}, running on {}",
@@ -303,7 +303,9 @@ impl<'a> Tag<'a> {
                                     platform.architecture, platform.os
                                 );
 
-                                if platform.architecture != arch.as_oci_str() || platform.os != os {
+                                if platform.architecture != arch.as_oci_str()
+                                    || platform.os != os.as_oci_str()
+                                {
                                     return None;
                                 }
                             }

@@ -93,6 +93,50 @@ impl fmt::Display for Architecture {
     }
 }
 
+/// Representation of an OS
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperatingSystem {
+    /// Linux
+    Linux,
+}
+
+impl OperatingSystem {
+    /// Creates our OS enum from the Rust OS name
+    ///
+    /// # Errors
+    ///
+    /// If the given OS is unknown
+    pub fn from_rust_str(s: &str) -> Result<Self, OciBootstrapError> {
+        // See <https://github.com/rust-lang/rust/blob/master/library/std/build.rs#L21>
+        Ok(match s {
+            "linux" => Self::Linux,
+            _ => return Err(OciBootstrapError::Custom(format!("Unknown OS: {s}"))),
+        })
+    }
+
+    /// Returns the OCI Operating System name
+    #[must_use]
+    pub fn as_oci_str(self) -> &'static str {
+        // See GOOS <https://go.dev/doc/install/source#environment>
+        match self {
+            Self::Linux => "linux",
+        }
+    }
+}
+
+impl Default for OperatingSystem {
+    fn default() -> Self {
+        OperatingSystem::from_rust_str(consts::OS)
+            .unwrap_or_else(|_| panic!("Running on unknown OS: {}", consts::OS))
+    }
+}
+
+impl fmt::Display for OperatingSystem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_oci_str())
+    }
+}
+
 /// Our Error Type
 #[derive(thiserror::Error, Debug)]
 pub enum OciBootstrapError {

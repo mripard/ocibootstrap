@@ -21,13 +21,12 @@ use registry::{Manifest, Registry};
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
 use temp_dir::TempDir;
-use types::{Architecture, OciBootstrapError};
+use types::{Architecture, OciBootstrapError, OperatingSystem};
 
 mod config;
 mod container;
-mod utils;
 
-use crate::{container::ContainerSpec, utils::get_current_oci_os};
+use crate::container::ContainerSpec;
 
 const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
 
@@ -391,7 +390,7 @@ fn main() -> Result<(), anyhow::Error> {
             let tag = image.latest()?;
             info!("Found Tag {}", tag.name());
 
-            let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+            let manifest = tag.manifest_for_config(cli.arch, OperatingSystem::default())?;
 
             let mut file = File::options().read(true).write(true).open(&output)?;
 
@@ -456,7 +455,7 @@ fn main() -> Result<(), anyhow::Error> {
             let tag = image.latest()?;
             info!("Found Tag {}", tag.name());
 
-            let manifest = tag.manifest_for_config(cli.arch, get_current_oci_os())?;
+            let manifest = tag.manifest_for_config(cli.arch, OperatingSystem::default())?;
 
             write_manifest_to_dir(&manifest, &output)?;
             Ok(())
