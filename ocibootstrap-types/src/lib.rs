@@ -10,7 +10,7 @@ use std::{env::consts, io};
 use serde::{de, Deserialize};
 
 /// Representation of an hardware architecture
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum Architecture {
     /// ARM's AARCH32 Architecture
