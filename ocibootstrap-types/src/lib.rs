@@ -28,6 +28,26 @@ pub enum Architecture {
 }
 
 impl Architecture {
+    /// Returns an `Architecture` enum from the OCI string representation
+    ///
+    /// # Errors
+    ///
+    /// If the given architecture is unknown
+    pub fn from_oci_str(s: &str) -> Result<Self, OciBootstrapError> {
+        // See GOARCH <https://go.dev/doc/install/source#environment>
+        Ok(match s {
+            "arm" => Self::Arm,
+            "arm64" => Self::Arm64,
+            "x86" => Self::X86,
+            "amd64" => Self::X86_64,
+            _ => {
+                return Err(OciBootstrapError::Custom(format!(
+                    "Unknown Architecture {s}"
+                )))
+            }
+        })
+    }
+
     /// Creates our architecture enum from the Rust architecture name
     ///
     /// # Errors
