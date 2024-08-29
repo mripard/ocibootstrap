@@ -50,6 +50,7 @@ impl Architecture {
     /// Returns the OCI architecture name
     #[must_use]
     pub fn as_oci_str(self) -> &'static str {
+        // See GOARCH <https://go.dev/doc/install/source#environment>
         match self {
             Self::Arm => "arm",
             Self::Arm64 => "arm64",
