@@ -87,7 +87,7 @@ mod registry_url_tests {
     };
 
     #[test]
-    fn test_alias() {
+    fn test_short_name_with_alias() {
         let container_name = "debian";
 
         assert!(CONTAINERS_CFG
@@ -107,7 +107,7 @@ mod registry_url_tests {
     }
 
     #[test]
-    fn test_short_name_with_alias() {
+    fn test_short_name_without_alias() {
         let container_name = "nginx";
 
         assert!(CONTAINERS_CFG
@@ -127,7 +127,7 @@ mod registry_url_tests {
     }
 
     #[test]
-    fn test_name_without_domain() {
+    fn test_long_name_without_domain() {
         let container = ContainerSpec::from_container_name("pytorch/pytorch").unwrap();
 
         assert_eq!(container.name, "pytorch/pytorch");
@@ -138,7 +138,7 @@ mod registry_url_tests {
     }
 
     #[test]
-    fn test_other_registry() {
+    fn test_full_name() {
         let container =
             ContainerSpec::from_container_name("registry.access.redhat.com/ubi9").unwrap();
 
