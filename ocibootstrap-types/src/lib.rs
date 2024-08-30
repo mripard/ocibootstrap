@@ -166,7 +166,7 @@ pub enum OciBootstrapError {
 }
 
 /// Digest Algorithm Representation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DigestAlgorithm {
     /// NSA SHA-2 SHA-256 Algorithm
     Sha256,
@@ -199,7 +199,7 @@ impl fmt::Display for DigestAlgorithm {
 }
 
 /// A Digest Representation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Digest {
     digest: DigestAlgorithm,
     bytes: Vec<u8>,
