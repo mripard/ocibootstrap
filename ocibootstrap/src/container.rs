@@ -128,7 +128,8 @@ mod registry_url_tests {
 
     #[test]
     fn test_long_name_without_domain() {
-        let container = ContainerSpec::from_container_name("pytorch/pytorch").unwrap();
+        let container_name = "pytorch/pytorch";
+        let container = ContainerSpec::from_container_name(container_name).unwrap();
 
         assert_eq!(container.name, "pytorch/pytorch");
         assert_eq!(
@@ -139,8 +140,8 @@ mod registry_url_tests {
 
     #[test]
     fn test_full_name() {
-        let container =
-            ContainerSpec::from_container_name("registry.access.redhat.com/ubi9").unwrap();
+        let container_name = "registry.access.redhat.com/ubi9";
+        let container = ContainerSpec::from_container_name(container_name).unwrap();
 
         assert_eq!(container.name, "ubi9");
         assert_eq!(
