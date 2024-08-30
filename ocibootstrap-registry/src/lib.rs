@@ -450,7 +450,7 @@ pub struct Manifest<'a> {
 }
 
 impl Manifest<'_> {
-    /// Returns the laryers  part of that Manifest
+    /// Returns the layers part of that Manifest
     #[must_use]
     pub fn layers(&self) -> Vec<ManifestLayer<'_>> {
         match &self.inner {
