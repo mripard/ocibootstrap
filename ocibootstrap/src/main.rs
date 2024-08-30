@@ -28,8 +28,6 @@ mod container;
 
 use crate::container::ContainerSpec;
 
-const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
-
 #[derive(Debug, Subcommand)]
 enum CliSubcommand {
     Device {
@@ -383,7 +381,7 @@ fn main() -> Result<(), anyhow::Error> {
                 bail!("Output argument isn't a file");
             }
 
-            let registry = Registry::connect(container_spec.registry_url.as_str())?;
+            let registry = Registry::connect(&container_spec.domain)?;
             let image = registry.image(&container_spec.name)?;
             debug!("Found Image {}", image.name());
 
@@ -448,7 +446,7 @@ fn main() -> Result<(), anyhow::Error> {
                 bail!("Output isn't a directory");
             }
 
-            let registry = Registry::connect(container_spec.registry_url.as_str())?;
+            let registry = Registry::connect(&container_spec.domain)?;
             let image = registry.image(&container_spec.name)?;
             debug!("Found Image {}", image.name());
 

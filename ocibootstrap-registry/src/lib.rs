@@ -26,6 +26,8 @@ use spec::{
     },
 };
 
+const DOCKER_HUB_REGISTRY_URL_STR: &str = "https://index.docker.io";
+
 const DIGEST_KEY: &str = "digest";
 const SCHEMA_VERSION_KEY: &str = "schemaVersion";
 const SIZE_KEY: &str = "size";
@@ -56,7 +58,13 @@ impl Registry {
     ///
     /// Returns an error if the given registry URL is malformed, or if the connection fails.
     pub fn connect(registry: &str) -> Result<Self, OciBootstrapError> {
-        let repo_base_url = Url::parse(registry)?;
+        let url = if registry == "docker.io" {
+            DOCKER_HUB_REGISTRY_URL_STR.to_owned()
+        } else {
+            format!("https://{registry}")
+        };
+
+        let repo_base_url = Url::parse(&url)?;
 
         let test_url = repo_base_url.join("/v2/")?;
 
