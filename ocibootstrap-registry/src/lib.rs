@@ -493,22 +493,31 @@ pub struct LocalBlob {
 }
 
 impl LocalBlob {
+    /// Returns a reader to the `LocalBlob`
+    ///
+    /// # Errors
+    ///
+    /// If the underlying file access fails, or if the file format is not supported.
+    pub fn reader(&self) -> Result<Box<dyn io::Read>, io::Error> {
+        let blob = File::open(&self.path)?;
+        let blob_reader = BufReader::new(blob);
+
+        Ok(match self.compression {
+            CompressionAlgorithm::None => Box::new(blob_reader),
+            CompressionAlgorithm::Gzip => Box::new(GzDecoder::new(blob_reader)),
+            CompressionAlgorithm::Zstd => return Err(io::Error::from(io::ErrorKind::Unsupported)),
+        })
+    }
+
     /// Extracts the content of a compressed blob into the given target directory
     ///
     /// # Errors
     ///
     /// If the backing file cannot be opened, or if it cannot be extracted
     pub fn extract(self, target_dir: &Path) -> Result<(), OciBootstrapError> {
-        let blob = File::open(self.path)?;
-        let blob_reader = BufReader::new(blob);
+        let reader = self.reader()?;
 
-        let tar = match self.compression {
-            CompressionAlgorithm::None => unimplemented!(),
-            CompressionAlgorithm::Gzip => GzDecoder::new(blob_reader),
-            CompressionAlgorithm::Zstd => unimplemented!(),
-        };
-
-        let mut archive = Archive::new(tar);
+        let mut archive = Archive::new(reader);
         archive.set_overwrite(true);
         archive.set_preserve_mtime(true);
         archive.set_preserve_ownerships(true);
