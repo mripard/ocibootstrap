@@ -113,6 +113,9 @@ impl<'de> Deserialize<'de> for Manifest {
             oci::IMAGE_INDEX_MIME_TYPE => {
                 Self::OciIndex(oci::ImageIndex::deserialize(value).map_err(de::Error::custom)?)
             }
+            oci::IMAGE_MANIFEST_MIME_TYPE => Self::OciManifest(
+                oci::ImageManifest::deserialize(value).map_err(de::Error::custom)?,
+            ),
             _ => unimplemented!(),
         })
     }
