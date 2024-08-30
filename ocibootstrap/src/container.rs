@@ -8,7 +8,7 @@ use crate::{
     OciBootstrapError, DOCKER_HUB_REGISTRY_URL_STR,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct ContainerSpec {
     pub(crate) name: String,
     pub(crate) registry_url: Url,
@@ -98,11 +98,12 @@ mod registry_url_tests {
             .get(container_name)
             .is_some());
 
-        let container = ContainerSpec::from_container_name(container_name).unwrap();
-        assert_eq!(container.name, "library/debian");
         assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
+            ContainerSpec::from_container_name(container_name).unwrap(),
+            ContainerSpec {
+                registry_url: Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap(),
+                name: String::from("library/debian"),
+            }
         );
     }
 
@@ -118,11 +119,12 @@ mod registry_url_tests {
             .get(container_name)
             .is_none());
 
-        let container = ContainerSpec::from_container_name(container_name).unwrap();
-        assert_eq!(container.name, "library/nginx");
         assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
+            ContainerSpec::from_container_name(container_name).unwrap(),
+            ContainerSpec {
+                registry_url: Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap(),
+                name: String::from("library/nginx"),
+            }
         );
     }
 
@@ -138,23 +140,25 @@ mod registry_url_tests {
             .get(container_name)
             .is_none());
 
-        let container = ContainerSpec::from_container_name(container_name).unwrap();
-        assert_eq!(container.name, "pytorch/pytorch");
         assert_eq!(
-            container.registry_url,
-            Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap()
+            ContainerSpec::from_container_name(container_name).unwrap(),
+            ContainerSpec {
+                registry_url: Url::parse(DOCKER_HUB_REGISTRY_URL_STR).unwrap(),
+                name: String::from(container_name),
+            }
         );
     }
 
     #[test]
     fn test_full_name() {
         let container_name = "registry.access.redhat.com/ubi9";
-        let container = ContainerSpec::from_container_name(container_name).unwrap();
 
-        assert_eq!(container.name, "ubi9");
         assert_eq!(
-            container.registry_url,
-            Url::parse("https://registry.access.redhat.com").unwrap()
+            ContainerSpec::from_container_name(container_name).unwrap(),
+            ContainerSpec {
+                registry_url: Url::parse("https://registry.access.redhat.com").unwrap(),
+                name: String::from("ubi9"),
+            }
         );
     }
 }
