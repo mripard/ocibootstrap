@@ -1,5 +1,6 @@
 use core::fmt;
 
+use log::debug;
 use url::Url;
 
 use crate::{
@@ -15,6 +16,8 @@ pub(crate) struct ContainerSpec {
 
 impl ContainerSpec {
     pub(crate) fn from_container_name(name: &str) -> Result<Self, OciBootstrapError> {
+        debug!("Parsing container {name}");
+
         let expanded_name = if let Ok(cfg) = CONTAINERS_CFG.as_ref() {
             if let Some(aliases) = cfg.get(CONTAINERS_CFG_ALIASES_KEY) {
                 if let Some(v) = aliases.get(name) {
@@ -35,6 +38,8 @@ impl ContainerSpec {
             format!("library/{expanded_name}")
         };
 
+        debug!("Full container name is {expanded_name}");
+
         let mut split_name = expanded_name.split('/');
         let domain = split_name
             .nth(0)
@@ -53,6 +58,8 @@ impl ContainerSpec {
         } else {
             format!("https://{domain}")
         };
+
+        debug!("Container domain name is {domain}");
 
         let container_name = split_name.collect::<Vec<_>>().join("/");
         Ok(ContainerSpec {
