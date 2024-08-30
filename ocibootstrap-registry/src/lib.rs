@@ -12,8 +12,7 @@ use std::{
 use flate2::bufread::GzDecoder;
 use log::debug;
 use reqwest::{blocking::Client, header::WWW_AUTHENTICATE, StatusCode};
-use serde::{de, Deserialize};
-use serde_json::Value;
+use serde::Deserialize;
 use tar::Archive;
 use types::{Architecture, Digest, OciBootstrapError, OperatingSystem};
 use url::Url;
@@ -41,37 +40,6 @@ pub(crate) enum CompressionAlgorithm {
     None,
     Gzip,
     Zstd,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum ManifestInner {
-    SchemaV2(v2::Manifest),
-}
-
-impl<'de> Deserialize<'de> for ManifestInner {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        let value = Value::deserialize(deserializer)?;
-        let map = value
-            .as_object()
-            .ok_or(de::Error::invalid_type(de::Unexpected::Seq, &"a map"))?;
-
-        let schema = map
-            .get(SCHEMA_VERSION_KEY)
-            .ok_or(de::Error::missing_field(SCHEMA_VERSION_KEY))?
-            .as_u64()
-            .ok_or(de::Error::invalid_type(
-                de::Unexpected::Other("something other than an integer"),
-                &"an integer",
-            ))?;
-
-        Ok(match schema {
-            2 => Self::SchemaV2(v2::Manifest::deserialize(value).map_err(de::Error::custom)?),
-            _ => unimplemented!(),
-        })
-    }
 }
 
 /// A Container Registry Representation
@@ -283,88 +251,85 @@ impl<'a> Tag<'a> {
 
         debug!("Manifest Response {text}");
 
-        let resp: ManifestInner = serde_json::from_str(&text)?;
-
+        let resp: v2::Manifest = serde_json::from_str(&text)?;
         let manifest = match &resp {
-            ManifestInner::SchemaV2(s) => match s {
-                v2::Manifest::Docker(_) => Manifest {
-                    image: self.image,
-                    inner: resp,
-                },
-                v2::Manifest::OciManifest(_) => unimplemented!(),
-                v2::Manifest::OciIndex(m) => {
-                    let manifest = m
-                        .manifests
-                        .iter()
-                        .find_map(|v| {
-                            if let Some(platform) = &v.platform {
-                                debug!(
-                                    "Found manifest for {}, os {}",
-                                    platform.architecture, platform.os
-                                );
-
-                                if platform.architecture != arch.as_oci_str()
-                                    || platform.os != os.as_oci_str()
-                                {
-                                    return None;
-                                }
-                            }
-
-                            let digest = &v.digest;
-
-                            let url = match self.image.registry.index_url.join(&format!(
-                                "/v2/{}/manifests/{}",
-                                self.image.name,
-                                digest.to_oci_string()
-                            )) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    return Some(Err::<ImageManifest, OciBootstrapError>(e.into()))
-                                }
-                            };
-
-                            debug!("Manifest URL {}", url);
-
-                            let mut client = Client::new()
-                                .get(url)
-                                .header("Accept", v2::oci::IMAGE_MANIFEST_MIME_TYPE);
-
-                            if let Some(token) = &self.image.token {
-                                client = client.header("Authorization", format!("Bearer {token}"));
-                            }
-
-                            let resp = match client.send() {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e.into())),
-                            };
-
-                            let resp = match resp.error_for_status() {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e.into())),
-                            };
-
-                            let text = match resp.text() {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e.into())),
-                            };
-
-                            debug!("Manifest Response {}", text);
-
-                            Some(match serde_json::from_str(&text) {
-                                Ok(v) => Ok(v),
-                                Err(e) => Err(e.into()),
-                            })
-                        })
-                        .ok_or(OciBootstrapError::Custom(String::from(
-                            "No manifest found for the requested platform.",
-                        )))??;
-
-                    Manifest {
-                        image: self.image,
-                        inner: ManifestInner::SchemaV2(v2::Manifest::OciManifest(manifest)),
-                    }
-                }
+            v2::Manifest::Docker(_) => Manifest {
+                image: self.image,
+                inner: resp,
             },
+            v2::Manifest::OciManifest(_) => unimplemented!(),
+            v2::Manifest::OciIndex(m) => {
+                let manifest = m
+                    .manifests
+                    .iter()
+                    .find_map(|v| {
+                        if let Some(platform) = &v.platform {
+                            debug!(
+                                "Found manifest for {}, os {}",
+                                platform.architecture, platform.os
+                            );
+
+                            if platform.architecture != arch.as_oci_str()
+                                || platform.os != os.as_oci_str()
+                            {
+                                return None;
+                            }
+                        }
+
+                        let digest = &v.digest;
+
+                        let url = match self.image.registry.index_url.join(&format!(
+                            "/v2/{}/manifests/{}",
+                            self.image.name,
+                            digest.to_oci_string()
+                        )) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                return Some(Err::<ImageManifest, OciBootstrapError>(e.into()))
+                            }
+                        };
+
+                        debug!("Manifest URL {}", url);
+
+                        let mut client = Client::new()
+                            .get(url)
+                            .header("Accept", v2::oci::IMAGE_MANIFEST_MIME_TYPE);
+
+                        if let Some(token) = &self.image.token {
+                            client = client.header("Authorization", format!("Bearer {token}"));
+                        }
+
+                        let resp = match client.send() {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e.into())),
+                        };
+
+                        let resp = match resp.error_for_status() {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e.into())),
+                        };
+
+                        let text = match resp.text() {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e.into())),
+                        };
+
+                        debug!("Manifest Response {}", text);
+
+                        Some(match serde_json::from_str(&text) {
+                            Ok(v) => Ok(v),
+                            Err(e) => Err(e.into()),
+                        })
+                    })
+                    .ok_or(OciBootstrapError::Custom(String::from(
+                        "No manifest found for the requested platform.",
+                    )))??;
+
+                Manifest {
+                    image: self.image,
+                    inner: v2::Manifest::OciManifest(manifest),
+                }
+            }
         };
 
         Ok(manifest)
@@ -481,7 +446,7 @@ impl ManifestLayer<'_> {
 #[derive(Clone, Debug)]
 pub struct Manifest<'a> {
     image: &'a Image<'a>,
-    inner: ManifestInner,
+    inner: v2::Manifest,
 }
 
 impl Manifest<'_> {
@@ -489,27 +454,25 @@ impl Manifest<'_> {
     #[must_use]
     pub fn layers(&self) -> Vec<ManifestLayer<'_>> {
         match &self.inner {
-            ManifestInner::SchemaV2(s) => match s {
-                v2::Manifest::Docker(m) => m
-                    .layers
-                    .clone()
-                    .into_iter()
-                    .map(|v| ManifestLayer {
-                        image: self.image,
-                        inner: v2::ImageLayer::DockerImage(v),
-                    })
-                    .collect(),
-                v2::Manifest::OciManifest(m) => m
-                    .layers
-                    .clone()
-                    .into_iter()
-                    .map(|l| ManifestLayer {
-                        image: self.image,
-                        inner: v2::ImageLayer::OciImage(l),
-                    })
-                    .collect(),
-                v2::Manifest::OciIndex(_) => unreachable!(),
-            },
+            v2::Manifest::Docker(m) => m
+                .layers
+                .clone()
+                .into_iter()
+                .map(|v| ManifestLayer {
+                    image: self.image,
+                    inner: v2::ImageLayer::DockerImage(v),
+                })
+                .collect(),
+            v2::Manifest::OciManifest(m) => m
+                .layers
+                .clone()
+                .into_iter()
+                .map(|l| ManifestLayer {
+                    image: self.image,
+                    inner: v2::ImageLayer::OciImage(l),
+                })
+                .collect(),
+            v2::Manifest::OciIndex(_) => unreachable!(),
         }
     }
 }
