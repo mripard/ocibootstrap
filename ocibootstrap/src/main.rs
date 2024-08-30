@@ -369,10 +369,7 @@ fn main() -> Result<(), anyhow::Error> {
             );
 
             if !output.exists() {
-                debug!("Output device doesn't exist, creating.");
-                return Err(
-                    io::Error::new(io::ErrorKind::NotFound, "Output Device doesn't exist").into(),
-                );
+                bail!("Output file doesn't exist.");
             }
 
             let metadata = output.metadata()?;
