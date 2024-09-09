@@ -37,6 +37,7 @@ toml = { version = "0.8.14", default-features = false, features = ["parse"] }
 types = { package = "ocibootstrap-types", path = "../ocibootstrap-types" }
 sys-mount = { version = "3.0.1", default-features = false }
 temp-dir = { version = "0.1.13", default-features = false }
+uuid = { version = "1.10.0", default-features = false }
 
 [dev-dependencies]
 test-log = { version = "0.2.16", default-features = false, features = ["log"] }
