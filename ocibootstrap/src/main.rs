@@ -364,7 +364,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             info!(
                 "Using container {} with output device {}",
-                container_spec,
+                container_spec.to_oci_string(),
                 output.display()
             );
 
@@ -430,7 +430,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             info!(
                 "Using container {} with output directory {}",
-                container_spec,
+                container_spec.to_oci_string(),
                 output.display()
             );
 
