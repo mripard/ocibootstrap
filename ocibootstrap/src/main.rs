@@ -341,8 +341,8 @@ fn create_and_mount_loop_device(
 
     let mounts = mount_points
         .into_iter()
-        .map(|(part, mount)| {
-            let mount_dir = join_path(&output_dir, &mount)?;
+        .map(|(part, target_mnt)| {
+            let mount_dir = join_path(&output_dir, &target_mnt)?;
             MountPoint::new(&part, &mount_dir)
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
