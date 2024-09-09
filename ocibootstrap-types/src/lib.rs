@@ -80,6 +80,19 @@ impl Architecture {
     }
 }
 
+impl From<oci_spec::image::Arch> for Architecture {
+    fn from(value: oci_spec::image::Arch) -> Self {
+        #[allow(clippy::wildcard_enum_match_arm)]
+        match value {
+            oci_spec::image::Arch::ARM => Self::Arm,
+            oci_spec::image::Arch::ARM64 => Self::Arm64,
+            oci_spec::image::Arch::i386 => Self::X86,
+            oci_spec::image::Arch::Amd64 => Self::X86_64,
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl Default for Architecture {
     fn default() -> Self {
         Architecture::from_rust_str(consts::ARCH)
@@ -124,6 +137,16 @@ impl OperatingSystem {
     }
 }
 
+impl From<oci_spec::image::Os> for OperatingSystem {
+    fn from(value: oci_spec::image::Os) -> Self {
+        #[allow(clippy::wildcard_enum_match_arm)]
+        match value {
+            oci_spec::image::Os::Linux => Self::Linux,
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl Default for OperatingSystem {
     fn default() -> Self {
         OperatingSystem::from_rust_str(consts::OS)
@@ -140,10 +163,6 @@ impl fmt::Display for OperatingSystem {
 /// Our Error Type
 #[derive(thiserror::Error, Debug)]
 pub enum OciBootstrapError {
-    /// An error has occurred when connecting to a remote server
-    #[error("Connection Failure")]
-    Connection(#[from] reqwest::Error),
-
     /// An error has occurred when accessing the local filesystem or files
     #[error("I/O Error")]
     Io(#[from] io::Error),

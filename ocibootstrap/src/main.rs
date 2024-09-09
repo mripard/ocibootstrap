@@ -9,23 +9,25 @@ use std::{
     process::Command,
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 use gpt::{
     GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
     EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
 };
+use local::{LocalManifest, LocalRegistry};
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
-use registry::{Manifest, Registry};
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
+use tar::Archive;
 use temp_dir::TempDir;
 use types::{Architecture, OciBootstrapError, OperatingSystem};
 use uuid::Uuid;
 
 mod config;
 mod container;
+mod local;
 
 use crate::container::ContainerSpec;
 
@@ -401,15 +403,26 @@ const PARTITIONS_LAYOUT: &[Partition] = &[
     },
 ];
 
-fn write_manifest_to_dir(manifest: &Manifest<'_>, dir: &Path) -> Result<(), OciBootstrapError> {
+fn write_manifest_to_dir(
+    manifest: &LocalManifest<'_>,
+    dir: &Path,
+) -> Result<(), OciBootstrapError> {
     fs::create_dir_all(dir)?;
 
-    for layer in manifest.layers() {
-        info!("Found layer {}", layer.digest());
-        let blob = layer.fetch()?;
+    for layer in manifest.layers()? {
+        info!("Found layer {}, extracting...", layer.digest());
+        let reader = layer.archive()?;
 
-        info!("Blob retrieved, extracting ...");
-        blob.extract(dir)?;
+        debug!("Got the archive. Extracting...");
+
+        let mut archive = Archive::new(reader);
+        archive.set_overwrite(true);
+        archive.set_preserve_mtime(true);
+        archive.set_preserve_ownerships(true);
+        archive.set_preserve_permissions(true);
+        archive.set_unpack_xattrs(true);
+
+        archive.unpack(dir)?;
 
         info!("Done");
     }
@@ -448,14 +461,16 @@ fn main() -> Result<(), anyhow::Error> {
                 bail!("Output argument isn't a file");
             }
 
-            let registry = Registry::connect(&container_spec.domain)?;
-            let image = registry.image(&container_spec.name)?;
-            debug!("Found Image {}", image.name());
+            let registry = LocalRegistry::new()?;
+            let image = registry
+                .image_by_spec(&container_spec)
+                .context("Couldn't find image in registry")?;
 
-            let tag = image.latest()?;
-            info!("Found Tag {}", tag.name());
+            debug!("Found Image {} in our local storage", container_spec);
 
-            let manifest = tag.manifest_for_config(cli.arch, OperatingSystem::default())?;
+            let manifest = image
+                .manifest_for_platform(cli.arch, OperatingSystem::default())?
+                .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(&output)?;
             let mounts = create_and_mount_loop_device(file, PARTITIONS_LAYOUT)?;
@@ -482,14 +497,16 @@ fn main() -> Result<(), anyhow::Error> {
                 bail!("Output isn't a directory");
             }
 
-            let registry = Registry::connect(&container_spec.domain)?;
-            let image = registry.image(&container_spec.name)?;
-            debug!("Found Image {}", image.name());
+            let registry = LocalRegistry::new()?;
+            let image = registry
+                .image_by_spec(&container_spec)
+                .context("Couldn't find image in registry")?;
 
-            let tag = image.latest()?;
-            info!("Found Tag {}", tag.name());
+            debug!("Found Image {} in our local storage", container_spec);
 
-            let manifest = tag.manifest_for_config(cli.arch, OperatingSystem::default())?;
+            let manifest = image
+                .manifest_for_platform(cli.arch, OperatingSystem::default())?
+                .context("Couldn't find manifest")?;
 
             write_manifest_to_dir(&manifest, &output)?;
             Ok(())

@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "ocibootstrap",
     "ocibootstrap-gpt",
-    "ocibootstrap-registry",
     "ocibootstrap-tar-split",
     "ocibootstrap-types",
 ]
