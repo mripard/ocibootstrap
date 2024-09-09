@@ -116,7 +116,7 @@ impl Drop for LoopDevice {
 #[derive(Debug)]
 struct MountPoint {
     dev: PathBuf,
-    mnt: Mount,
+    host_mnt: Mount,
 }
 
 impl MountPoint {
@@ -133,7 +133,7 @@ impl MountPoint {
 
         Ok(Self {
             dev: dev.to_path_buf(),
-            mnt: mount,
+            host_mnt: mount,
         })
     }
 }
@@ -143,10 +143,10 @@ impl Drop for MountPoint {
         debug!(
             "Unmounting {} from {}",
             self.dev.display(),
-            self.mnt.target_path().display()
+            self.host_mnt.target_path().display()
         );
 
-        let res = self.mnt.unmount(UnmountFlags::DETACH);
+        let res = self.host_mnt.unmount(UnmountFlags::DETACH);
         if let Err(e) = res {
             error!("Couldn't unmount {}: {e}", self.dev.display());
         }
