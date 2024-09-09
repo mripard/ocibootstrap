@@ -68,7 +68,7 @@ impl ContainerSpec {
                     "Domain doesn't have the right format",
                 )))?;
 
-        if psl::domain(domain_name.as_bytes()).is_none() {
+        if domain_name != "localhost" && psl::domain(domain_name.as_bytes()).is_none() {
             debug!("The domain {domain_name} isn't valid, bailing out.");
 
             // TODO: We should probably try handle it by looking at the registries.conf
