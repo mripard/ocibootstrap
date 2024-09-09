@@ -337,7 +337,7 @@ fn create_and_mount_loop_device(
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    mount_points.sort_by(|a, b| Ord::cmp(&a.1.components().count(), &b.1.components().count()));
+    mount_points.sort_by(|a, b| Ord::cmp(&a.1, &b.1));
 
     let mounts = mount_points
         .into_iter()
