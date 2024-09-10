@@ -249,7 +249,7 @@ impl LocalImage<'_> {
             registry: self.registry,
             img: self,
             _json: manifest,
-            _config: cfg,
+            config: cfg,
         }))
     }
 }
@@ -259,7 +259,7 @@ pub(crate) struct LocalManifest<'a> {
     registry: &'a LocalRegistry,
     img: &'a LocalImage<'a>,
     _json: ImageManifest,
-    _config: ImageConfiguration,
+    config: ImageConfiguration,
 }
 
 impl LocalManifest<'_> {
@@ -284,6 +284,10 @@ impl LocalManifest<'_> {
         image_layers.reverse();
 
         Ok(image_layers)
+    }
+
+    pub(crate) fn configuration(&self) -> &ImageConfiguration {
+        &self.config
     }
 }
 
