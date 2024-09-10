@@ -11,10 +11,8 @@ use std::{
 
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
-use gpt::{
-    GuidPartitionBuilder, GuidPartitionTableBuilder, EFI_SYSTEM_PART_GUID,
-    EXTENDED_BOOTLOADER_PART_GUID, ROOT_PART_GUID_ARM64,
-};
+use gpt::{GuidPartitionBuilder, GuidPartitionTableBuilder};
+use layout::{Filesystem, GptPartitionTable, PartitionTable};
 use local::{LocalManifest, LocalRegistry};
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
@@ -23,10 +21,10 @@ use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
 use tar::Archive;
 use temp_dir::TempDir;
 use types::{Architecture, OciBootstrapError, OperatingSystem};
-use uuid::Uuid;
 
 mod config;
 mod container;
+mod layout;
 mod local;
 
 use crate::container::ContainerSpec;
@@ -58,10 +56,6 @@ struct Cli {
     #[clap(subcommand)]
     command: CliSubcommand,
 }
-
-const EFI_SYSTEM_PART_NAME: &str = "esp";
-const BOOT_PART_NAME: &str = "boot";
-const ROOT_PART_NAME: &str = "root";
 
 #[derive(Debug)]
 struct LoopDevice {
@@ -270,15 +264,15 @@ fn join_path(root: &Path, path: &Path) -> Result<PathBuf, io::Error> {
     Ok(canonical)
 }
 
-fn create_and_mount_loop_device(
-    mut file: File,
-    partitions: &'static [Partition],
-) -> Result<MountPoints, OciBootstrapError> {
-    let mut gpt_builder = GuidPartitionTableBuilder::new();
-    for partition in partitions {
+fn create_gpt(
+    table: &GptPartitionTable,
+    file: &mut File,
+) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+    let mut builder = GuidPartitionTableBuilder::new();
+    for partition in table.partitions() {
         let mut part_builder = GuidPartitionBuilder::new(partition.uuid);
 
-        if let Some(name) = partition.name {
+        if let Some(name) = &partition.name {
             part_builder = part_builder.name(name);
         }
 
@@ -291,12 +285,27 @@ fn create_and_mount_loop_device(
             .platform_required(partition.platform_required)
             .build();
 
-        gpt_builder = gpt_builder.add_partition(part);
+        builder = builder.add_partition(part);
     }
 
-    gpt_builder.build().write(&file)?;
+    builder.build().write(file)?;
     file.flush()?;
     file.sync_all()?;
+
+    Ok(table
+        .partitions()
+        .iter()
+        .map(|p| (p.fs, p.mnt.clone()))
+        .collect())
+}
+
+fn create_and_mount_loop_device(
+    mut file: File,
+    partition_table: PartitionTable,
+) -> Result<MountPoints, OciBootstrapError> {
+    let partitions = match partition_table {
+        PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
+    };
 
     let loop_control = LoopControl::open()?;
     let loop_device = LoopDevice::create(&loop_control, file)?;
@@ -311,7 +320,7 @@ fn create_and_mount_loop_device(
         .map(|(idx, part)| {
             let part_desc = &partitions[idx];
 
-            match part_desc.fs {
+            match part_desc.0 {
                 Filesystem::Fat32 => {
                     let output = Command::new("mkfs.vfat").arg(part.as_os_str()).output()?;
 
@@ -328,7 +337,7 @@ fn create_and_mount_loop_device(
                 }
             };
 
-            let mount_point = PathBuf::from(part_desc.mnt);
+            let mount_point = part_desc.1.clone();
             debug!(
                 "Partition {} Mounted on {}",
                 part.display(),
@@ -355,44 +364,6 @@ fn create_and_mount_loop_device(
         mnts: mounts,
     })
 }
-
-#[derive(Debug)]
-enum Filesystem {
-    Fat32,
-    Ext4,
-}
-
-#[derive(Debug)]
-struct Partition {
-    uuid: Uuid,
-    name: Option<&'static str>,
-    mnt: &'static str,
-    size: Option<u64>,
-    fs: Filesystem,
-    bootable: bool,
-    platform_required: bool,
-}
-
-const PARTITIONS_LAYOUT: &[Partition] = &[
-    Partition {
-        uuid: EFI_SYSTEM_PART_GUID,
-        name: Some(EFI_SYSTEM_PART_NAME),
-        mnt: "/efi",
-        size: Some(512 << 20),
-        fs: Filesystem::Fat32,
-        bootable: true,
-        platform_required: true,
-    },
-    Partition {
-        uuid: ROOT_PART_GUID_ARM64,
-        name: Some(ROOT_PART_NAME),
-        mnt: "/",
-        size: None,
-        fs: Filesystem::Ext4,
-        bootable: false,
-        platform_required: false,
-    },
-];
 
 fn write_manifest_to_dir(
     manifest: &LocalManifest<'_>,
@@ -464,7 +435,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(&output)?;
-            let mounts = create_and_mount_loop_device(file, PARTITIONS_LAYOUT)?;
+            let mounts = create_and_mount_loop_device(file, manifest.configuration().try_into()?)?;
             write_manifest_to_dir(&manifest, mounts.dir.path())?;
 
             drop(mounts);
