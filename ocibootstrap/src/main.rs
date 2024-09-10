@@ -377,20 +377,11 @@ const PARTITIONS_LAYOUT: &[Partition] = &[
     Partition {
         uuid: EFI_SYSTEM_PART_GUID,
         name: Some(EFI_SYSTEM_PART_NAME),
-        mnt: "/boot/efi",
-        size: Some(256 << 20),
+        mnt: "/efi",
+        size: Some(512 << 20),
         fs: Filesystem::Fat32,
         bootable: true,
         platform_required: true,
-    },
-    Partition {
-        uuid: EXTENDED_BOOTLOADER_PART_GUID,
-        name: Some(BOOT_PART_NAME),
-        mnt: "/boot",
-        size: Some(512 << 20),
-        fs: Filesystem::Ext4,
-        bootable: false,
-        platform_required: false,
     },
     Partition {
         uuid: ROOT_PART_GUID_ARM64,
