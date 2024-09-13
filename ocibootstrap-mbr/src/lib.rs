@@ -263,7 +263,7 @@ impl MasterBootRecordPartitionTable {
             zip(&self.builder.partitions, cfg.partitions_offset).enumerate()
         {
             let mut mbr_part = [0u8; MBR_PART_ENTRY_SIZE];
-            mbr_part[0] = 0;
+            mbr_part[0] = part.builder.bits;
 
             let chs_bytes = self.lba_to_chs_bytes(first_lba);
             mbr_part[1..4].copy_from_slice(&chs_bytes);
