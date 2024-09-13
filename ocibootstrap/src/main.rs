@@ -304,7 +304,7 @@ fn create_and_mount_loop_device(
     partition_table: PartitionTable,
 ) -> Result<MountPoints, OciBootstrapError> {
     let partitions = match partition_table {
-        PartitionTable::Gpt(gpt) => create_gpt(&gpt, &mut file)?,
+        PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
     };
 
     let loop_control = LoopControl::open()?;
