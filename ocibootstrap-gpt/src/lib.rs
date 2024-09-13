@@ -7,6 +7,7 @@ use std::{
 
 use bit_field::BitField;
 use log::debug;
+use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, Euclid, FromPrimitive, Num, ToPrimitive};
 use uuid::{uuid, Uuid};
 
@@ -253,34 +254,6 @@ impl GuidPartitionTable {
     pub fn write(self, mut file: &File) -> Result<(), io::Error> {
         let cfg = self.build_gpt_layout(file)?;
 
-        let mut mbr_gpt_part = [0u8; 16];
-        mbr_gpt_part[0] = 0;
-
-        let starting_chs: u32 = 0x00_0200;
-        mbr_gpt_part[1..4].copy_from_slice(&starting_chs.to_le_bytes()[0..3]);
-
-        mbr_gpt_part[4] = 0xee;
-
-        let ending_chs = u32::MAX;
-        mbr_gpt_part[5..8].copy_from_slice(&ending_chs.to_le_bytes()[0..3]);
-        mbr_gpt_part[8..12].copy_from_slice(
-            &cfg.primary_gpt_header_lba
-                .to_u32()
-                .unwrap_or(u32::MAX)
-                .to_le_bytes(),
-        );
-        mbr_gpt_part[12..16].copy_from_slice(
-            &cfg.backup_gpt_header_lba
-                .to_u32()
-                .unwrap_or(u32::MAX)
-                .to_le_bytes(),
-        );
-
-        let mut mbr = [0u8; 512];
-        mbr[446..462].copy_from_slice(&mbr_gpt_part);
-        mbr[510] = 0x55;
-        mbr[511] = 0xaa;
-
         let mut primary_gpt = [0u8; 92];
         primary_gpt[0..8].copy_from_slice(&GPT_SIGNATURE_HEADER.to_le_bytes());
         primary_gpt[8..12].copy_from_slice(&GPT_VERSION_HEADER.to_le_bytes());
@@ -355,7 +328,17 @@ impl GuidPartitionTable {
         backup_gpt[16..20].copy_from_slice(&backup_gpt_crc.to_le_bytes());
 
         file.seek(io::SeekFrom::Start(cfg.mbr_header_lba * cfg.block_size))?;
-        file.write_all(&mbr)?;
+        MasterBootRecordPartitionTableBuilder::new()
+            .add_partition(
+                MasterBootRecordPartitionBuilder::new(0xee)
+                    .size(
+                        ((cfg.backup_gpt_header_lba + 1) - cfg.primary_gpt_header_lba)
+                            * cfg.block_size,
+                    )
+                    .build(),
+            )
+            .build()
+            .write(file)?;
 
         file.seek(io::SeekFrom::Start(
             cfg.primary_gpt_header_lba * cfg.block_size,
