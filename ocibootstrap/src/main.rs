@@ -353,6 +353,7 @@ fn create_and_mount_loop_device(
             match part_desc.0 {
                 Filesystem::Fat32(p) => {
                     let mut command = Command::new("mkfs.vfat");
+                    let mut command_ref = command.args(["-g", "64/32"]);
 
                     debug!("Creating FAT32 partition on {}", part.display());
 
