@@ -7,32 +7,75 @@ use types::OciBootstrapError;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Filesystem {
-    Fat32,
-    Ext4,
+pub(crate) struct FatParameters {
+    pub(crate) volume_id: Option<u32>,
 }
 
-impl FromStr for Filesystem {
-    type Err = OciBootstrapError;
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ExtParameters {
+    pub(crate) uuid: Option<Uuid>,
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "ext4" => Self::Ext4,
-            "fat" => Self::Fat32,
-            _ => {
-                return Err(OciBootstrapError::Custom(format!(
-                    "Invalid Filesystem Name {s}",
-                )))
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Filesystem {
+    Fat32(FatParameters),
+    Ext4(ExtParameters),
+}
+
+impl Filesystem {
+    fn from_labels(
+        labels: &HashMap<String, String>,
+        part_name: &str,
+    ) -> Result<Self, OciBootstrapError> {
+        match labels
+            .get(&format!(
+                "com.github.mripard.ocibootstrap.partition.{part_name}.fs",
+            ))
+            .ok_or(OciBootstrapError::Custom(format!(
+                "Partition {part_name}: Missing Partition File System",
+            )))?
+            .as_str()
+        {
+            "ext4" => {
+                let uuid = labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.ext4.uuid",
+                    ))
+                    .map(|s| Uuid::from_str(s))
+                    .transpose()
+                    .map_err(|_err| {
+                        OciBootstrapError::Custom(format!(
+                            "Partition {part_name}: Invalid UUID Format",
+                        ))
+                    })?;
+
+                Ok(Filesystem::Ext4(ExtParameters { uuid }))
             }
-        })
+            "fat" => {
+                let vol_id = labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.fat.vol_id",
+                    ))
+                    .map(|s| u32::from_str_radix(s, 16))
+                    .transpose()
+                    .map_err(|_err| {
+                        OciBootstrapError::Custom(format!(
+                            "Partition {part_name}: Invalid Id Format",
+                        ))
+                    })?;
+
+                Ok(Filesystem::Fat32(FatParameters { volume_id: vol_id }))
+            }
+            _ => unimplemented!(),
+        }
     }
 }
 
 impl fmt::Display for Filesystem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Filesystem::Fat32 => f.write_str("fat"),
-            Filesystem::Ext4 => f.write_str("ext4"),
+            Filesystem::Fat32(_) => f.write_str("fat"),
+            Filesystem::Ext4(_) => f.write_str("ext4"),
         }
     }
 }
@@ -118,16 +161,7 @@ impl PartitionTable {
 
             debug!("Partition Size {:#?}", part_size);
 
-            let part_fs = Filesystem::from_str(
-                labels
-                    .get(&format!(
-                        "com.github.mripard.ocibootstrap.partition.{part_name}.fs",
-                    ))
-                    .ok_or(OciBootstrapError::Custom(format!(
-                        "Partition {idx}: Missing Partition File System",
-                    )))?,
-            )?;
-
+            let part_fs = Filesystem::from_labels(labels, part_name)?;
             debug!("Partition {idx}: Filesystem {part_fs}");
 
             let part_bootable = if let Some(bootable) = labels.get(&format!(

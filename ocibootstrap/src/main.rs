@@ -321,15 +321,39 @@ fn create_and_mount_loop_device(
             let part_desc = &partitions[idx];
 
             match part_desc.0 {
-                Filesystem::Fat32 => {
-                    let output = Command::new("mkfs.vfat").arg(part.as_os_str()).output()?;
+                Filesystem::Fat32(p) => {
+                    let mut command = Command::new("mkfs.vfat");
 
+                    debug!("Creating FAT32 partition on {}", part.display());
+
+                    if let Some(vol_id) = p.volume_id {
+                        let id = format!("{vol_id:x}");
+
+                        debug!("FAT32 Volume ID is {id}");
+
+                        command_ref = command_ref.args(["-i", &id]);
+                    }
+
+                    let output = command_ref.arg(part.as_os_str()).output()?;
                     if !output.status.success() {
                         unimplemented!();
                     }
                 }
-                Filesystem::Ext4 => {
-                    let output = Command::new("mkfs.ext4").arg(part.as_os_str()).output()?;
+                Filesystem::Ext4(p) => {
+                    let mut command = Command::new("mkfs.ext4");
+                    let mut command_ref = &mut command;
+
+                    debug!("Creating EXT4 partition on {}", part.display());
+
+                    if let Some(uuid) = p.uuid {
+                        let uuid = uuid.to_string();
+
+                        debug!("EXT4 UUID is {uuid}");
+
+                        command_ref = command_ref.args(["-U", &uuid]);
+                    }
+
+                    let output = command_ref.arg(part.as_os_str()).output()?;
 
                     if !output.status.success() {
                         unimplemented!();
