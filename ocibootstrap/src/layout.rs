@@ -2,9 +2,25 @@ use core::{fmt, str::FromStr};
 use std::{collections::HashMap, path::PathBuf};
 
 use log::debug;
+use num_traits::Num;
 use oci_spec::image::ImageConfiguration;
 use types::OciBootstrapError;
 use uuid::Uuid;
+
+fn parse_int_repr<T>(s: &str) -> Result<T, T::FromStrRadixErr>
+where
+    T: Num,
+{
+    if let Some(s) = s.strip_prefix("0x") {
+        T::from_str_radix(s, 16)
+    } else if let Some(s) = s.strip_prefix("0o") {
+        T::from_str_radix(s, 8)
+    } else if let Some(s) = s.strip_prefix("0b") {
+        T::from_str_radix(s, 2)
+    } else {
+        T::from_str_radix(s, 10)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FatParameters {
@@ -101,8 +117,28 @@ impl GptPartitionTable {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct MbrPartition {
+    pub(crate) kind: u8,
+    pub(crate) mnt: PathBuf,
+    pub(crate) size: Option<u64>,
+    pub(crate) fs: Filesystem,
+    pub(crate) bootable: bool,
+}
+
+pub(crate) struct MbrPartitionTable {
+    partitions: Vec<MbrPartition>,
+}
+
+impl MbrPartitionTable {
+    pub(crate) fn partitions(&self) -> &[MbrPartition] {
+        &self.partitions
+    }
+}
+
 pub(crate) enum PartitionTable {
     Gpt(GptPartitionTable),
+    Mbr(MbrPartitionTable),
 }
 
 impl PartitionTable {
@@ -197,6 +233,90 @@ impl PartitionTable {
 
         Ok(GptPartitionTable { partitions })
     }
+
+    fn mbr_from_config(
+        labels: &HashMap<String, String>,
+    ) -> Result<MbrPartitionTable, OciBootstrapError> {
+        let part_names: Vec<String> = serde_json::from_str(
+            labels
+                .get("com.github.mripard.ocibootstrap.partitions")
+                .ok_or(OciBootstrapError::Custom(
+                    "Missing partitions list".to_owned(),
+                ))?,
+        )?;
+
+        debug!("Found {} partitions.", part_names.len());
+
+        let mut partitions = Vec::with_capacity(part_names.len());
+        for (idx, part_name) in part_names.iter().enumerate() {
+            debug!("Partition {idx}: Name {part_name}");
+
+            let part_type = parse_int_repr(
+                labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.type",
+                    ))
+                    .ok_or(OciBootstrapError::Custom(format!(
+                        "Partition {idx}: Missing Partition Mount Point",
+                    )))?,
+            )
+            .map_err(|_err| {
+                OciBootstrapError::Custom(format!(
+                    "Partition {idx}: Invalid Integer Representation",
+                ))
+            })?;
+
+            debug!("Partition {idx}: Partition Type {part_type:x}");
+
+            let part_mnt = PathBuf::from(
+                labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.mount_point",
+                    ))
+                    .ok_or(OciBootstrapError::Custom(format!(
+                        "Partition {idx}: Missing Partition Mount Point",
+                    )))?,
+            );
+
+            debug!("Partition Mount Point {}", part_mnt.display());
+
+            let part_size = labels
+                .get(&format!(
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.size",
+                ))
+                .map(|s| {
+                    u64::from_str(s).map(|size| size << 20).map_err(|_err| {
+                        OciBootstrapError::Custom(format!("Partition {idx}: Invalid integer value"))
+                    })
+                })
+                .transpose()?;
+
+            debug!("Partition Size {:#?}", part_size);
+
+            let part_fs = Filesystem::from_labels(labels, part_name)?;
+            debug!("Partition {idx}: Filesystem {part_fs}");
+
+            let part_bootable = if let Some(bootable) = labels.get(&format!(
+                "com.github.mripard.ocibootstrap.partition.{part_name}.flags.bootable",
+            )) {
+                bool::from_str(bootable).map_err(|_err| {
+                    OciBootstrapError::Custom(format!("Partition {idx}: Invalid bool value"))
+                })?
+            } else {
+                false
+            };
+
+            partitions.push(MbrPartition {
+                kind: part_type,
+                mnt: part_mnt,
+                size: part_size,
+                fs: part_fs,
+                bootable: part_bootable,
+            });
+        }
+
+        Ok(MbrPartitionTable { partitions })
+    }
 }
 
 impl TryFrom<&ImageConfiguration> for PartitionTable {
@@ -217,6 +337,7 @@ impl TryFrom<&ImageConfiguration> for PartitionTable {
 
         Ok(match layout_type.as_str() {
             "gpt" => Self::Gpt(PartitionTable::gpt_from_config(labels)?),
+            "mbr" => Self::Mbr(PartitionTable::mbr_from_config(labels)?),
             _ => {
                 return Err(OciBootstrapError::Custom(format!(
                     "Invalid Layout Type: {layout_type}"

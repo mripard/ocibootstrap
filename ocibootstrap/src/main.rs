@@ -12,10 +12,11 @@ use std::{
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 use gpt::{GuidPartitionBuilder, GuidPartitionTableBuilder};
-use layout::{Filesystem, GptPartitionTable, PartitionTable};
+use layout::{Filesystem, GptPartitionTable, MbrPartitionTable, PartitionTable};
 use local::{LocalManifest, LocalRegistry};
 use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
+use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
 use tar::Archive;
@@ -299,12 +300,41 @@ fn create_gpt(
         .collect())
 }
 
+fn create_mbr(
+    table: &MbrPartitionTable,
+    file: &mut File,
+) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+    let mut builder = MasterBootRecordPartitionTableBuilder::new();
+    for partition in table.partitions() {
+        let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
+
+        if let Some(size) = partition.size {
+            part_builder = part_builder.size(size);
+        }
+
+        let part = part_builder.bootable(partition.bootable).build();
+
+        builder = builder.add_partition(part);
+    }
+
+    builder.build().write(file)?;
+    file.flush()?;
+    file.sync_all()?;
+
+    Ok(table
+        .partitions()
+        .iter()
+        .map(|p| (p.fs, p.mnt.clone()))
+        .collect())
+}
+
 fn create_and_mount_loop_device(
     mut file: File,
     partition_table: PartitionTable,
 ) -> Result<MountPoints, OciBootstrapError> {
     let partitions = match partition_table {
         PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
+        PartitionTable::Mbr(table) => create_mbr(&table, &mut file)?,
     };
 
     let loop_control = LoopControl::open()?;
