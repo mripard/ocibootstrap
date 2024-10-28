@@ -353,8 +353,17 @@ fn create_and_mount_loop_device(
             match part_desc.0 {
                 Filesystem::Fat32(p) => {
                     let mut command = Command::new("mkfs.vfat");
+                    let mut command_ref = &mut command;
 
                     debug!("Creating FAT32 partition on {}", part.display());
+
+                    if let (Some(heads), Some(spt)) = (p.heads, p.sectors_per_track) {
+                        let geometry = format!("{heads}/{spt}");
+
+                        debug!("FAT32 Geometry uses {heads} heads, {spt} sectors per track");
+
+                        command_ref = command_ref.args(["-g", &geometry]);
+                    }
 
                     if let Some(vol_id) = p.volume_id {
                         let id = format!("{vol_id:x}");

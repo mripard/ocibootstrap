@@ -25,6 +25,8 @@ where
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FatParameters {
     pub(crate) volume_id: Option<u32>,
+    pub(crate) heads: Option<u32>,
+    pub(crate) sectors_per_track: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -80,7 +82,37 @@ impl Filesystem {
                         ))
                     })?;
 
-                Ok(Filesystem::Fat32(FatParameters { volume_id: vol_id }))
+                let heads = labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.fat.heads",
+                    ))
+                    .map(|s| {
+                        u32::from_str(s).map_err(|_err| {
+                            OciBootstrapError::Custom(format!(
+                                "Partition {part_name}: Invalid value"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                let sectors_per_track = labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.fat.sectors_per_track",
+                    ))
+                    .map(|s| {
+                        u32::from_str(s).map_err(|_err| {
+                            OciBootstrapError::Custom(format!(
+                                "Partition {part_name}: Invalid value"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                Ok(Filesystem::Fat32(FatParameters {
+                    volume_id: vol_id,
+                    heads,
+                    sectors_per_track,
+                }))
             }
             _ => unimplemented!(),
         }
