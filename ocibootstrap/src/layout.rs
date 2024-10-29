@@ -154,7 +154,7 @@ impl GptPartitionTable {
 pub(crate) struct MbrPartition {
     pub(crate) kind: u8,
     pub(crate) mnt: PathBuf,
-    pub(crate) size_bytes: Option<u64>,
+    pub(crate) size_bytes: Option<usize>,
     pub(crate) fs: Filesystem,
     pub(crate) bootable: bool,
 }
@@ -326,7 +326,7 @@ impl PartitionTable {
                     "com.github.mripard.ocibootstrap.partition.{part_name}.size_mb",
                 ))
                 .map(|size_str| {
-                    u64::from_str(size_str)
+                    usize::from_str(size_str)
                         .map(|size_mb| size_mb << 20)
                         .map_err(|_err| {
                             OciBootstrapError::Custom(format!(

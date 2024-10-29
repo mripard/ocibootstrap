@@ -28,7 +28,7 @@ pub struct MasterBootRecordPartition {
 #[derive(Debug)]
 pub struct MasterBootRecordPartitionBuilder {
     type_: u8,
-    size: Option<u64>,
+    size: Option<usize>,
     bits: u8,
 }
 
@@ -49,7 +49,7 @@ impl MasterBootRecordPartitionBuilder {
     /// If the size isn't provided, the partition will be made to fill any available space. Only one
     /// size-less partition is allowed to be part of a [`MasterBootRecordPartitionTable`].
     #[must_use]
-    pub fn size(mut self, size: u64) -> Self {
+    pub fn size(mut self, size: usize) -> Self {
         self.size = Some(size);
         self
     }
@@ -69,10 +69,9 @@ impl MasterBootRecordPartitionBuilder {
 }
 
 struct MBRTableLayout {
-    block_size: u64,
-
-    mbr_header_lba: u64,
-    partitions_offset: Vec<(u64, u64, u64)>,
+    block_size: usize,
+    mbr_header_lba: usize,
+    partitions_offset: Vec<(usize, usize, usize)>,
 }
 
 /// an MBR Partition Table Representation
@@ -82,9 +81,9 @@ pub struct MasterBootRecordPartitionTable {
 }
 
 impl MasterBootRecordPartitionTable {
-    fn lba_to_chs(&self, lba: u64) -> (u16, u8, u8) {
-        let hpc: u64 = self.builder.heads_per_cylinder.into();
-        let spt: u64 = self.builder.sectors_per_track.into();
+    fn lba_to_chs(&self, lba: usize) -> (u16, u8, u8) {
+        let hpc: usize = self.builder.heads_per_cylinder.into();
+        let spt: usize = self.builder.sectors_per_track.into();
 
         let c = num_cast!(u16, lba / (hpc * spt));
         let h = num_cast!(u8, (lba / spt) % hpc);
@@ -93,7 +92,7 @@ impl MasterBootRecordPartitionTable {
         (c, h, s)
     }
 
-    fn lba_to_chs_bytes(&self, lba: u64) -> [u8; 3] {
+    fn lba_to_chs_bytes(&self, lba: usize) -> [u8; 3] {
         let (c, h, s) = self.lba_to_chs(lba);
         if c > ((1 << 10) - 1) {
             let c_lo = num_cast!(u8, c & 0xff);
@@ -109,20 +108,16 @@ impl MasterBootRecordPartitionTable {
     fn build_table_layout(&self, file: &File) -> Result<MBRTableLayout, io::Error> {
         let metadata = file.metadata()?;
 
-        let block_size_u64 = num_cast!(u64, LBA_SIZE);
-        let blocks = metadata.len() / block_size_u64;
-
+        let blocks = num_cast!(usize, metadata.len()) / LBA_SIZE;
         debug!(
             "File has len of {} bytes, {} blocks",
             metadata.len(),
             blocks
         );
 
-        let mbr_lba_offset_u32 = num_cast!(u32, MBR_LBA_OFFSET);
-        debug!("Setting up MBR at LBA {mbr_lba_offset_u32}");
+        debug!("Setting up MBR at LBA {MBR_LBA_OFFSET}");
 
-        let mbr_lba_size_u32 = num_cast!(u32, MBR_LBA_SIZE);
-        let first_usable_lba = u64::from(mbr_lba_offset_u32 + mbr_lba_size_u32);
+        let first_usable_lba = MBR_LBA_OFFSET + MBR_LBA_SIZE;
         debug!("First Usable LBA: {first_usable_lba}");
 
         let last_usable_lba = blocks - 1;
@@ -146,7 +141,7 @@ impl MasterBootRecordPartitionTable {
             .enumerate()
             .map(|(idx, p)| {
                 Ok(if let Some(size) = p.builder.size {
-                    let size_lba = div_round_up(size, block_size_u64);
+                    let size_lba = div_round_up(size, LBA_SIZE);
 
                     debug!("Partition {idx}: Size {size_lba} LBAs");
 
@@ -173,7 +168,7 @@ impl MasterBootRecordPartitionTable {
                     None
                 })
             })
-            .collect::<Result<Vec<Option<u64>>, io::Error>>()?;
+            .collect::<Result<Vec<Option<usize>>, io::Error>>()?;
 
         let mut next_lba = first_usable_lba;
         let parts = part_sizes_lba
@@ -190,11 +185,11 @@ impl MasterBootRecordPartitionTable {
 
                 (offset, part_size, next_lba - 1)
             })
-            .collect::<Vec<(u64, u64, u64)>>();
+            .collect::<Vec<(usize, usize, usize)>>();
 
         Ok(MBRTableLayout {
-            block_size: block_size_u64,
-            mbr_header_lba: u64::from(mbr_lba_offset_u32),
+            block_size: LBA_SIZE,
+            mbr_header_lba: MBR_LBA_OFFSET,
             partitions_offset: parts,
         })
     }
@@ -209,6 +204,7 @@ impl MasterBootRecordPartitionTable {
     /// # Panics
     ///
     /// Panics if we have an integer overflow in one of the integer type conversions
+    #[allow(clippy::unwrap_in_result)]
     pub fn write(self, mut file: &File) -> Result<(), io::Error> {
         let cfg = self.build_table_layout(file)?;
 
@@ -244,7 +240,8 @@ impl MasterBootRecordPartitionTable {
         mbr[510] = 0x55;
         mbr[511] = 0xaa;
 
-        file.seek(io::SeekFrom::Start(cfg.mbr_header_lba * cfg.block_size))?;
+        let seek_offset = num_cast!(u64, cfg.mbr_header_lba * cfg.block_size);
+        file.seek(io::SeekFrom::Start(seek_offset))?;
         file.write_all(&mbr)?;
         file.flush()?;
         file.sync_data()?;
@@ -298,6 +295,7 @@ mod tests {
 
     use log::{debug, trace};
     use num_traits::ToPrimitive;
+    use part::num_cast;
     use serde::{de, Deserialize};
     use tempfile::NamedTempFile;
     use test_log::test;
@@ -310,7 +308,7 @@ mod tests {
     const TEST_PARTITION_TYPE: u8 = 42;
     const TEST_PARTITION_SECONDARY_TYPE: u8 = 142;
 
-    const TEMP_FILE_SIZE: u64 = 2 << 30;
+    const TEMP_FILE_SIZE: usize = 2 << 30;
 
     fn deserialize_hex_to_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
     where
@@ -344,8 +342,8 @@ mod tests {
     struct SfDiskMbrPartition {
         #[serde(rename = "node")]
         _node: PathBuf,
-        start: u64,
-        size: u64,
+        start: usize,
+        size: usize,
         #[serde(rename = "type", deserialize_with = "deserialize_hex_to_u8")]
         kind: u8,
     }
@@ -360,7 +358,7 @@ mod tests {
         #[serde(rename = "unit")]
         _unit: String,
         #[serde(rename = "sectorsize")]
-        sector_size: u64,
+        sector_size: usize,
         #[serde(default)]
         partitions: Vec<SfDiskMbrPartition>,
     }
@@ -381,7 +379,10 @@ mod tests {
     fn test_table_no_partition() {
         let temp_file = NamedTempFile::new().unwrap();
 
-        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
 
         MasterBootRecordPartitionTableBuilder::new()
             .build()
@@ -403,9 +404,7 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 0);
     }
 
@@ -427,10 +426,11 @@ mod tests {
 
     #[test]
     fn test_one_partition_no_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
 
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE).build())
@@ -453,40 +453,33 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 1);
 
         let part = &table.partitions[0];
         assert_eq!(part.kind, TEST_PARTITION_TYPE);
 
-        let start = (MBR_LBA_OFFSET + MBR_LBA_SIZE).to_u64().unwrap();
+        let start = MBR_LBA_OFFSET + MBR_LBA_SIZE;
         assert_eq!(part.start, start);
 
-        let size = ((TEMP_FILE_SIZE / block_size_u64) - start)
-            .to_u64()
-            .unwrap();
+        let size = (TEMP_FILE_SIZE / LBA_SIZE) - start;
         assert_eq!(part.size, size);
     }
 
     #[test]
     fn test_one_partition_exact_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
-
-        let first_lba = (MBR_LBA_OFFSET + MBR_LBA_SIZE).to_u64().unwrap();
-        let last_lba = ((TEMP_FILE_SIZE.to_usize().unwrap() / LBA_SIZE) - MBR_LBA_SIZE)
-            .to_u64()
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
             .unwrap();
 
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
+        let first_lba = MBR_LBA_OFFSET + MBR_LBA_SIZE;
+        let last_lba = (TEMP_FILE_SIZE / LBA_SIZE) - MBR_LBA_SIZE;
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE)
-                    .size((last_lba - first_lba) * block_size_u64)
+                    .size((last_lba - first_lba) * LBA_SIZE)
                     .build(),
             )
             .build()
@@ -508,7 +501,7 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 1);
 
         let part = &table.partitions[0];
@@ -519,18 +512,16 @@ mod tests {
 
     #[test]
     fn test_one_partition_exact_size_non_lba_aligned() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
-
-        let first_lba = (MBR_LBA_OFFSET + MBR_LBA_SIZE).to_u64().unwrap();
-        let last_lba = ((TEMP_FILE_SIZE.to_usize().unwrap() / LBA_SIZE) - MBR_LBA_SIZE)
-            .to_u64()
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
             .unwrap();
 
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
-        let part_size_bytes = (last_lba - first_lba) * block_size_u64 - 10;
+        let first_lba = MBR_LBA_OFFSET + MBR_LBA_SIZE;
+        let last_lba = (TEMP_FILE_SIZE / LBA_SIZE) - MBR_LBA_SIZE;
+
+        let part_size_bytes = (last_lba - first_lba) * LBA_SIZE - 10;
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE)
@@ -556,7 +547,7 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 1);
 
         let part = &table.partitions[0];
@@ -567,18 +558,17 @@ mod tests {
 
     #[test]
     fn test_two_partitions_one_size_missing() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
 
-        let first_lba = (MBR_LBA_OFFSET + MBR_LBA_SIZE).to_u64().unwrap();
+        let first_lba = MBR_LBA_OFFSET + MBR_LBA_SIZE;
 
         debug!("First LBA is {first_lba}");
 
-        let last_lba = ((TEMP_FILE_SIZE.to_usize().unwrap() / LBA_SIZE) - MBR_LBA_SIZE)
-            .to_u64()
-            .unwrap();
+        let last_lba = (TEMP_FILE_SIZE / LBA_SIZE) - MBR_LBA_SIZE;
 
         debug!("Last LBA is {last_lba}");
 
@@ -586,11 +576,10 @@ mod tests {
 
         debug!("Cutoff LBA is {cutoff_lba}");
 
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE)
-                    .size((cutoff_lba - first_lba) * block_size_u64)
+                    .size((cutoff_lba - first_lba) * LBA_SIZE)
                     .build(),
             )
             .add_partition(
@@ -615,7 +604,7 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 2);
 
         let part = &table.partitions[0];
@@ -631,18 +620,17 @@ mod tests {
 
     #[test]
     fn test_two_partitions_exact_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
 
-        let first_lba = (MBR_LBA_OFFSET + MBR_LBA_SIZE).to_u64().unwrap();
+        let first_lba = MBR_LBA_OFFSET + MBR_LBA_SIZE;
 
         debug!("First LBA is {first_lba}");
 
-        let last_lba = ((TEMP_FILE_SIZE.to_usize().unwrap() / LBA_SIZE) - MBR_LBA_SIZE)
-            .to_u64()
-            .unwrap();
+        let last_lba = (TEMP_FILE_SIZE / LBA_SIZE) - MBR_LBA_SIZE;
 
         debug!("Last LBA is {last_lba}");
 
@@ -650,16 +638,15 @@ mod tests {
 
         debug!("Cutoff LBA is {cutoff_lba}");
 
-        let block_size_u64 = LBA_SIZE.to_u64().unwrap();
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE)
-                    .size((cutoff_lba - first_lba) * block_size_u64)
+                    .size((cutoff_lba - first_lba) * LBA_SIZE)
                     .build(),
             )
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(TEST_PARTITION_SECONDARY_TYPE)
-                    .size((last_lba - cutoff_lba) * block_size_u64)
+                    .size((last_lba - cutoff_lba) * LBA_SIZE)
                     .build(),
             )
             .build()
@@ -681,7 +668,7 @@ mod tests {
         };
 
         assert_ne!(table.id, 0);
-        assert_eq!(table.sector_size, block_size_u64);
+        assert_eq!(table.sector_size, LBA_SIZE);
         assert_eq!(table.partitions.len(), 2);
 
         let part = &table.partitions[0];
@@ -697,10 +684,11 @@ mod tests {
 
     #[test]
     fn test_multiple_partitions_no_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
 
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(MasterBootRecordPartitionBuilder::new(TEST_PARTITION_TYPE).build())

@@ -283,13 +283,15 @@ impl GuidPartitionTable {
         backup_gpt[16..20].copy_from_slice(&backup_gpt_crc.to_le_bytes());
 
         file.seek(io::SeekFrom::Start(cfg.mbr_header_lba * cfg.block_size))?;
+
         MasterBootRecordPartitionTableBuilder::new()
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(0xee)
-                    .size(
+                    .size(num_cast!(
+                        usize,
                         start_end_to_size(cfg.primary_gpt_header_lba, cfg.backup_gpt_header_lba)
-                            * cfg.block_size,
-                    )
+                            * cfg.block_size
+                    ))
                     .build(),
             )
             .build()
