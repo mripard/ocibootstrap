@@ -28,7 +28,7 @@ pub struct MasterBootRecordPartition {
 #[derive(Debug)]
 pub struct MasterBootRecordPartitionBuilder {
     type_: u8,
-    size: Option<usize>,
+    size_lba: Option<usize>,
     bits: u8,
 }
 
@@ -38,7 +38,7 @@ impl MasterBootRecordPartitionBuilder {
     pub fn new(part_type: u8) -> Self {
         Self {
             type_: part_type,
-            size: None,
+            size_lba: None,
             bits: 0,
         }
     }
@@ -50,7 +50,7 @@ impl MasterBootRecordPartitionBuilder {
     /// size-less partition is allowed to be part of a [`MasterBootRecordPartitionTable`].
     #[must_use]
     pub fn size(mut self, size: usize) -> Self {
-        self.size = Some(size);
+        self.size_lba = Some(div_round_up(size, LBA_SIZE));
         self
     }
 
@@ -140,9 +140,7 @@ impl MasterBootRecordPartitionTable {
             .iter()
             .enumerate()
             .map(|(idx, p)| {
-                Ok(if let Some(size) = p.builder.size {
-                    let size_lba = div_round_up(size, LBA_SIZE);
-
+                Ok(if let Some(size_lba) = p.builder.size_lba {
                     debug!("Partition {idx}: Size {size_lba} LBAs");
 
                     if size_lba > available_blocks {
