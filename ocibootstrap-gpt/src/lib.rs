@@ -125,7 +125,7 @@ impl GuidPartitionTable {
             .partitions
             .iter()
             .map(|p| PartitionLayoutHint {
-                offset_lba: None,
+                offset_lba: p.builder.offset_lba,
                 size_lba: p.builder.size_lba,
             })
             .collect::<Vec<_>>();
@@ -329,6 +329,7 @@ pub struct GuidPartitionBuilder {
     type_: Uuid,
     guid: Uuid,
     name: Option<String>,
+    offset_lba: Option<usize>,
     size_lba: Option<usize>,
     bits: u64,
 }
@@ -342,6 +343,7 @@ impl GuidPartitionBuilder {
             type_: part_type,
             guid: part_guid,
             name: None,
+            offset_lba: None,
             size_lba: None,
             bits: 0,
         }
@@ -352,6 +354,19 @@ impl GuidPartitionBuilder {
     #[must_use]
     pub fn new(part_type: Uuid) -> Self {
         Self::new_with_uuid(part_type, Uuid::new_v4())
+    }
+
+    /// Sets the partition offset in LBAs from the start of the device.
+    /// Unlike the size, if provided, the offset will always be exactly
+    /// the one provided even if unaligned.
+    ///
+    /// If the offset isn't provided, the offset used is guaranteed to
+    /// be after the end of the previous partition, but isn't guaranteed
+    /// to start on the next LBA.
+    #[must_use]
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.offset_lba = Some(offset);
+        self
     }
 
     /// Sets the partition size in bytes. Whenever building the GPT, this size might be increased to
@@ -408,7 +423,7 @@ mod tests {
     use std::{path::PathBuf, process::Command};
 
     use log::trace;
-    use part::{num_cast, start_end_to_size, start_size_to_end};
+    use part::{num_cast, round_up, start_end_to_size, start_size_to_end};
     use serde::Deserialize;
     use tempfile::NamedTempFile;
     use test_log::test;
@@ -600,6 +615,52 @@ mod tests {
     }
 
     #[test]
+    fn test_one_partition_no_size_offset() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
+
+        let start_lba = first_lba() + 4;
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .offset(start_lba)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.sector_size, BLOCK_SIZE);
+
+        let first_lba = first_lba();
+        assert_eq!(gpt.first_lba, first_lba);
+
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+        assert_eq!(gpt.last_lba, last_lba);
+        assert_eq!(gpt.partitions.len(), 1);
+
+        let part = &gpt.partitions[0];
+        assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
+        assert_eq!(part.start, start_lba);
+        assert_eq!(part.size, start_end_to_size(start_lba, last_lba));
+    }
+
+    #[test]
     fn test_partition_with_uuid() {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
@@ -676,6 +737,56 @@ mod tests {
     }
 
     #[test]
+    fn test_one_partition_exact_size_offset() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
+
+        let first_lba = first_lba();
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+
+        let start_lba = round_up(first_lba, 100);
+        let size_lba = start_end_to_size(start_lba, last_lba);
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .offset(start_lba)
+                    .size(size_lba * BLOCK_SIZE)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.sector_size, BLOCK_SIZE);
+        assert_eq!(gpt.first_lba, first_lba);
+        assert_eq!(gpt.last_lba, last_lba);
+        assert_eq!(gpt.partitions.len(), 1);
+
+        let part = &gpt.partitions[0];
+        assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
+        assert_eq!(part.start, start_lba);
+        assert_eq!(part.size, start_end_to_size(start_lba, last_lba));
+    }
+
+    #[test]
     fn test_two_partitions_exact_size() {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
@@ -738,6 +849,236 @@ mod tests {
         assert_eq!(part.kind, EXTENDED_BOOTLOADER_PART_GUID);
         assert_eq!(part.start, second_part_start);
         assert_eq!(part.size, second_part_size);
+    }
+
+    #[test]
+    fn test_two_partitions_offset_too_small() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
+
+        let first_lba = first_lba();
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+
+        let available_lbas = start_end_to_size(first_lba, last_lba);
+
+        let first_part_start = first_lba;
+        let first_part_size = available_lbas / 2;
+        let first_part_end = start_size_to_end(first_part_start, first_part_size);
+
+        let second_part_start = first_part_end + 1;
+        let second_part_size = available_lbas - first_part_size;
+        let second_part_end = start_size_to_end(second_part_start, second_part_size);
+        assert_eq!(last_lba, second_part_end);
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .size(first_part_size * BLOCK_SIZE)
+                    .build(),
+            )
+            .add_partition(
+                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                    .offset(second_part_start - 10)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap_err();
+    }
+
+    #[test]
+    fn test_two_partitions_exact_size_offset() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
+
+        let first_lba = first_lba();
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+
+        let available_lbas = start_end_to_size(first_lba, last_lba);
+        let first_offset_lba = first_lba;
+        let first_size_lba = available_lbas / 2;
+
+        let second_offset_lba = first_offset_lba + first_size_lba;
+        let second_size_lba = available_lbas - first_size_lba;
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .offset(first_offset_lba)
+                    .size(first_size_lba * BLOCK_SIZE)
+                    .build(),
+            )
+            .add_partition(
+                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                    .size(second_size_lba * BLOCK_SIZE)
+                    .offset(second_offset_lba)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.sector_size, BLOCK_SIZE);
+        assert_eq!(gpt.first_lba, first_lba);
+        assert_eq!(gpt.last_lba, last_lba);
+        assert_eq!(gpt.partitions.len(), 2);
+
+        let part = &gpt.partitions[0];
+        assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
+        assert_eq!(part.start, first_offset_lba);
+        assert_eq!(part.size, first_size_lba);
+
+        let part = &gpt.partitions[1];
+        assert_eq!(part.kind, EXTENDED_BOOTLOADER_PART_GUID);
+        assert_eq!(part.start, second_offset_lba);
+        assert_eq!(part.size, second_size_lba);
+    }
+
+    #[test]
+    fn test_two_partitions_exact_size_with_offset_gap() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
+
+        let first_lba = first_lba();
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+
+        let available_lbas = start_end_to_size(first_lba, last_lba);
+
+        let first_offset_lba = first_lba;
+        let first_size_lba = available_lbas / 2;
+
+        let second_offset_lba = first_offset_lba + first_size_lba + 10;
+        let second_size_lba = start_end_to_size(second_offset_lba, last_lba);
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(
+                GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
+                    .offset(first_offset_lba)
+                    .size(first_size_lba * BLOCK_SIZE)
+                    .build(),
+            )
+            .add_partition(
+                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                    .size(second_size_lba * BLOCK_SIZE)
+                    .offset(second_offset_lba)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.sector_size, BLOCK_SIZE);
+        assert_eq!(gpt.first_lba, first_lba);
+        assert_eq!(gpt.last_lba, last_lba);
+        assert_eq!(gpt.partitions.len(), 2);
+
+        let part = &gpt.partitions[0];
+        assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
+        assert_eq!(part.start, first_offset_lba);
+        assert_eq!(part.size, first_size_lba);
+
+        let part = &gpt.partitions[1];
+        assert_eq!(part.kind, EXTENDED_BOOTLOADER_PART_GUID);
+        assert_eq!(part.start, second_offset_lba);
+        assert_eq!(part.size, second_size_lba);
+    }
+
+    #[test]
+    fn test_two_partitions_missing_size_with_offset_hole() {
+        let temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .as_file()
+            .set_len(num_cast!(u64, TEMP_FILE_SIZE))
+            .unwrap();
+
+        let first_lba = first_lba();
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
+
+        let available_lbas = start_end_to_size(first_lba, last_lba);
+
+        let first_offset_lba = first_lba;
+        let first_size_lba = available_lbas / 2;
+
+        let second_offset_lba = first_offset_lba + first_size_lba;
+        let second_size_lba = ((last_lba - second_offset_lba) + 1) - 10;
+
+        GuidPartitionTableBuilder::new()
+            .add_partition(GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID).build())
+            .add_partition(
+                GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
+                    .size(second_size_lba * BLOCK_SIZE)
+                    .offset(second_offset_lba)
+                    .build(),
+            )
+            .build()
+            .write(temp_file.as_file())
+            .unwrap();
+
+        let output = Command::new("sfdisk")
+            .arg("-J")
+            .arg(temp_file.path())
+            .output()
+            .unwrap();
+
+        trace!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+
+        let res: SfdiskOutput = serde_json::from_slice(&output.stdout).unwrap();
+        let gpt = match res.table {
+            SfDiskPartitionTable::Gpt(v) => v,
+            _ => panic!(),
+        };
+
+        assert_eq!(gpt.sector_size, BLOCK_SIZE);
+        assert_eq!(gpt.first_lba, first_lba);
+        assert_eq!(gpt.last_lba, last_lba);
+        assert_eq!(gpt.partitions.len(), 2);
+
+        let part = &gpt.partitions[0];
+        assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
+        assert_eq!(part.start, first_offset_lba);
+        assert_eq!(part.size, first_size_lba);
+
+        let part = &gpt.partitions[1];
+        assert_eq!(part.kind, EXTENDED_BOOTLOADER_PART_GUID);
+        assert_eq!(part.start, second_offset_lba);
+        assert_eq!(part.size, second_size_lba);
     }
 
     #[test]
