@@ -116,20 +116,25 @@ struct DevicePartition {
     #[expect(dead_code)]
     fs: Filesystem,
     dev: PathBuf,
-    host_mnt: Mount,
+    host_mnt: Option<Mount>,
 }
 
 impl DevicePartition {
-    fn new(dev: &Path, fs: Filesystem, mnt: &Path) -> Result<Self, io::Error> {
-        debug!("Mounting {} on {}", dev.display(), mnt.display());
+    fn new(dev: &Path, fs: Filesystem, mnt: Option<&Path>) -> Result<Self, io::Error> {
+        let mount = if let Some(mnt) = mnt {
+            debug!("Mounting {} on {}", dev.display(), mnt.display());
 
-        fs::create_dir_all(mnt)?;
+            fs::create_dir_all(mnt)?;
 
-        let mount = Mount::builder()
-            .fstype(FilesystemType::Set(&["ext4", "vfat"]))
-            .mount(dev, mnt)?;
+            let mount = Mount::builder()
+                .fstype(FilesystemType::Set(&["ext4", "vfat"]))
+                .mount(dev, mnt)?;
 
-        trace!("Mount Successful");
+            trace!("Mount Successful");
+            Some(mount)
+        } else {
+            None
+        };
 
         Ok(Self {
             dev: dev.to_path_buf(),
@@ -141,15 +146,17 @@ impl DevicePartition {
 
 impl Drop for DevicePartition {
     fn drop(&mut self) {
-        debug!(
-            "Unmounting {} from {}",
-            self.dev.display(),
-            self.host_mnt.target_path().display()
-        );
+        if let Some(mnt) = &self.host_mnt {
+            debug!(
+                "Unmounting {} from {}",
+                self.dev.display(),
+                mnt.target_path().display()
+            );
 
-        let res = self.host_mnt.unmount(UnmountFlags::DETACH);
-        if let Err(e) = res {
-            error!("Couldn't unmount {}: {e}", self.dev.display());
+            let res = mnt.unmount(UnmountFlags::DETACH);
+            if let Err(e) = res {
+                error!("Couldn't unmount {}: {e}", self.dev.display());
+            }
         }
     }
 }
@@ -272,7 +279,7 @@ fn join_path(root: &Path, path: &Path) -> Result<PathBuf, io::Error> {
 fn create_gpt(
     table: &GptPartitionTable,
     file: &mut File,
-) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = GuidPartitionTableBuilder::new();
     for partition in table.partitions() {
         let mut part_builder = GuidPartitionBuilder::new(partition.uuid);
@@ -311,7 +318,7 @@ fn create_gpt(
 fn create_mbr(
     table: &MbrPartitionTable,
     file: &mut File,
-) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = MasterBootRecordPartitionTableBuilder::new();
     for partition in table.partitions() {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
@@ -413,11 +420,14 @@ fn create_and_mount_loop_device(
             };
 
             let mount_point = part_desc.1.clone();
-            debug!(
-                "Partition {} Mounted on {}",
-                device_part.display(),
-                mount_point.display()
-            );
+
+            if let Some(mnt) = &mount_point {
+                debug!(
+                    "Partition {} Mounted on {}",
+                    device_part.display(),
+                    mnt.display()
+                );
+            }
 
             Ok((device_part, part_desc.0, mount_point))
         })
@@ -428,8 +438,13 @@ fn create_and_mount_loop_device(
     let device_partitions = device_partitions
         .into_iter()
         .map(|(part, fs, target_mnt)| {
-            let mount_dir = join_path(&output_dir, &target_mnt)?;
-            DevicePartition::new(&part, fs, &mount_dir)
+            if let Some(mnt) = &target_mnt {
+                let mount_dir = join_path(&output_dir, mnt)?;
+
+                DevicePartition::new(&part, fs, Some(&mount_dir))
+            } else {
+                DevicePartition::new(&part, fs, None)
+            }
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 

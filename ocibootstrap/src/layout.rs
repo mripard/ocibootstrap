@@ -132,7 +132,7 @@ impl fmt::Display for Filesystem {
 pub(crate) struct GptPartition {
     pub(crate) uuid: Uuid,
     pub(crate) name: Option<String>,
-    pub(crate) mnt: PathBuf,
+    pub(crate) mnt: Option<PathBuf>,
     pub(crate) offset_lba: Option<usize>,
     pub(crate) size_bytes: Option<usize>,
     pub(crate) fs: Filesystem,
@@ -154,7 +154,7 @@ impl GptPartitionTable {
 #[derive(Debug, Clone)]
 pub(crate) struct MbrPartition {
     pub(crate) kind: u8,
-    pub(crate) mnt: PathBuf,
+    pub(crate) mnt: Option<PathBuf>,
     pub(crate) offset_lba: Option<usize>,
     pub(crate) size_bytes: Option<usize>,
     pub(crate) fs: Filesystem,
@@ -209,17 +209,15 @@ impl PartitionTable {
 
             debug!("Partition {idx}: Partition UUID {part_uuid}");
 
-            let part_mnt = PathBuf::from(
-                labels
-                    .get(&format!(
-                        "com.github.mripard.ocibootstrap.partition.{part_name}.mount_point",
-                    ))
-                    .ok_or(OciBootstrapError::Custom(format!(
-                        "Partition {idx}: Missing Partition Mount Point",
-                    )))?,
-            );
+            let part_mnt = labels
+                .get(&format!(
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.mount_point",
+                ))
+                .map(PathBuf::from);
 
-            debug!("Partition Mount Point {}", part_mnt.display());
+            if let Some(mnt) = &part_mnt {
+                debug!("Partition {idx}: Mount Point {}", mnt.display());
+            }
 
             let part_offset_lba = labels
                 .get(&format!(
@@ -327,17 +325,15 @@ impl PartitionTable {
 
             debug!("Partition {idx}: Partition Type {part_type:x}");
 
-            let part_mnt = PathBuf::from(
-                labels
-                    .get(&format!(
-                        "com.github.mripard.ocibootstrap.partition.{part_name}.mount_point",
-                    ))
-                    .ok_or(OciBootstrapError::Custom(format!(
-                        "Partition {idx}: Missing Partition Mount Point",
-                    )))?,
-            );
+            let part_mnt = labels
+                .get(&format!(
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.mount_point",
+                ))
+                .map(PathBuf::from);
 
-            debug!("Partition Mount Point {}", part_mnt.display());
+            if let Some(mnt) = &part_mnt {
+                debug!("Partition Mount Point {}", mnt.display());
+            }
 
             let part_offset_lba = labels
                 .get(&format!(
