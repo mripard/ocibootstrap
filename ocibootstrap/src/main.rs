@@ -342,11 +342,11 @@ fn create_mbr(
 
 fn create_and_mount_loop_device(
     mut file: File,
-    partition_table: PartitionTable,
+    partition_table: &PartitionTable,
 ) -> Result<Device, OciBootstrapError> {
     let partitions = match partition_table {
-        PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
-        PartitionTable::Mbr(table) => create_mbr(&table, &mut file)?,
+        PartitionTable::Gpt(table) => create_gpt(table, &mut file)?,
+        PartitionTable::Mbr(table) => create_mbr(table, &mut file)?,
     };
 
     let loop_control = LoopControl::open()?;
@@ -510,7 +510,8 @@ fn main() -> Result<(), anyhow::Error> {
                 .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(&output)?;
-            let device = create_and_mount_loop_device(file, manifest.configuration().try_into()?)?;
+            let partition_table = manifest.configuration().try_into()?;
+            let device = create_and_mount_loop_device(file, &partition_table)?;
             write_manifest_to_dir(&manifest, device.dir.path())?;
 
             drop(device);
