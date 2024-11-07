@@ -113,12 +113,14 @@ impl Drop for LoopDevice {
 
 #[derive(Debug)]
 struct DevicePartition {
+    #[expect(dead_code)]
+    fs: Filesystem,
     dev: PathBuf,
     host_mnt: Mount,
 }
 
 impl DevicePartition {
-    fn new(dev: &Path, mnt: &Path) -> Result<Self, io::Error> {
+    fn new(dev: &Path, fs: Filesystem, mnt: &Path) -> Result<Self, io::Error> {
         debug!("Mounting {} on {}", dev.display(), mnt.display());
 
         fs::create_dir_all(mnt)?;
@@ -131,6 +133,7 @@ impl DevicePartition {
 
         Ok(Self {
             dev: dev.to_path_buf(),
+            fs,
             host_mnt: mount,
         })
     }
@@ -416,17 +419,17 @@ fn create_and_mount_loop_device(
                 mount_point.display()
             );
 
-            Ok((device_part, mount_point))
+            Ok((device_part, part_desc.0, mount_point))
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    device_partitions.sort_by(|a, b| Ord::cmp(&a.1, &b.1));
+    device_partitions.sort_by(|a, b| Ord::cmp(&a.2, &b.2));
 
     let device_partitions = device_partitions
         .into_iter()
-        .map(|(part, target_mnt)| {
+        .map(|(part, fs, target_mnt)| {
             let mount_dir = join_path(&output_dir, &target_mnt)?;
-            DevicePartition::new(&part, &mount_dir)
+            DevicePartition::new(&part, fs, &mount_dir)
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
