@@ -128,7 +128,7 @@ impl fmt::Display for Filesystem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct GptPartition {
     pub(crate) uuid: Uuid,
     pub(crate) name: Option<String>,
@@ -139,6 +139,7 @@ pub(crate) struct GptPartition {
     pub(crate) platform_required: bool,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct GptPartitionTable {
     partitions: Vec<GptPartition>,
 }
@@ -149,7 +150,7 @@ impl GptPartitionTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct MbrPartition {
     pub(crate) kind: u8,
     pub(crate) mnt: PathBuf,
@@ -158,6 +159,7 @@ pub(crate) struct MbrPartition {
     pub(crate) bootable: bool,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct MbrPartitionTable {
     partitions: Vec<MbrPartition>,
 }
@@ -168,6 +170,7 @@ impl MbrPartitionTable {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) enum PartitionTable {
     Gpt(GptPartitionTable),
     Mbr(MbrPartitionTable),
