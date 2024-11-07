@@ -112,12 +112,12 @@ impl Drop for LoopDevice {
 }
 
 #[derive(Debug)]
-struct MountPoint {
+struct DevicePartition {
     dev: PathBuf,
     host_mnt: Mount,
 }
 
-impl MountPoint {
+impl DevicePartition {
     fn new(dev: &Path, mnt: &Path) -> Result<Self, io::Error> {
         debug!("Mounting {} on {}", dev.display(), mnt.display());
 
@@ -136,7 +136,7 @@ impl MountPoint {
     }
 }
 
-impl Drop for MountPoint {
+impl Drop for DevicePartition {
     fn drop(&mut self) {
         debug!(
             "Unmounting {} from {}",
@@ -153,7 +153,8 @@ impl Drop for MountPoint {
 
 #[derive(Debug)]
 struct MountPoints {
-    mnts: Vec<MountPoint>,
+    mnts: Vec<DevicePartition>,
+
     dir: TempDir,
     _loopdev: LoopDevice,
 }
@@ -344,10 +345,10 @@ fn create_and_mount_loop_device(
     let output_dir = temp_dir.path().to_path_buf();
     debug!("Temp output dir is {}", output_dir.display());
 
-    let mut mount_points = find_device_parts(&loop_device.path())?
+    let mut device_partitions = find_device_parts(&loop_device.path())?
         .into_iter()
         .enumerate()
-        .map(|(idx, part)| {
+        .map(|(idx, device_part)| {
             let part_desc = &partitions[idx];
 
             match part_desc.0 {
@@ -355,7 +356,7 @@ fn create_and_mount_loop_device(
                     let mut command = Command::new("mkfs.vfat");
                     let mut command_ref = &mut command;
 
-                    debug!("Creating FAT32 partition on {}", part.display());
+                    debug!("Creating FAT32 partition on {}", device_part.display());
 
                     if let (Some(heads), Some(spt)) = (p.heads, p.sectors_per_track) {
                         let geometry = format!("{heads}/{spt}");
@@ -373,7 +374,7 @@ fn create_and_mount_loop_device(
                         command_ref = command_ref.args(["-i", &id]);
                     }
 
-                    let output = command_ref.arg(part.as_os_str()).output()?;
+                    let output = command_ref.arg(device_part.as_os_str()).output()?;
                     if !output.status.success() {
                         unimplemented!();
                     }
@@ -382,7 +383,7 @@ fn create_and_mount_loop_device(
                     let mut command = Command::new("mkfs.ext4");
                     let mut command_ref = &mut command;
 
-                    debug!("Creating EXT4 partition on {}", part.display());
+                    debug!("Creating EXT4 partition on {}", device_part.display());
 
                     if let Some(uuid) = p.uuid {
                         let uuid = uuid.to_string();
@@ -392,7 +393,7 @@ fn create_and_mount_loop_device(
                         command_ref = command_ref.args(["-U", &uuid]);
                     }
 
-                    let output = command_ref.arg(part.as_os_str()).output()?;
+                    let output = command_ref.arg(device_part.as_os_str()).output()?;
 
                     if !output.status.success() {
                         unimplemented!();
@@ -403,28 +404,28 @@ fn create_and_mount_loop_device(
             let mount_point = part_desc.1.clone();
             debug!(
                 "Partition {} Mounted on {}",
-                part.display(),
+                device_part.display(),
                 mount_point.display()
             );
 
-            Ok((part, mount_point))
+            Ok((device_part, mount_point))
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    mount_points.sort_by(|a, b| Ord::cmp(&a.1, &b.1));
+    device_partitions.sort_by(|a, b| Ord::cmp(&a.1, &b.1));
 
-    let mounts = mount_points
+    let device_partitions = device_partitions
         .into_iter()
         .map(|(part, target_mnt)| {
             let mount_dir = join_path(&output_dir, &target_mnt)?;
-            MountPoint::new(&part, &mount_dir)
+            DevicePartition::new(&part, &mount_dir)
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
     Ok(MountPoints {
         _loopdev: loop_device,
         dir: temp_dir,
-        mnts: mounts,
+        mnts: device_partitions,
     })
 }
 
