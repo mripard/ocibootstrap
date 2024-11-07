@@ -113,7 +113,6 @@ impl Drop for LoopDevice {
 
 #[derive(Debug)]
 struct DevicePartition {
-    #[expect(dead_code)]
     fs: Filesystem,
     dev: PathBuf,
     host_mnt: Option<Mount>,
@@ -311,7 +310,7 @@ fn create_gpt(
     Ok(table
         .partitions()
         .iter()
-        .map(|p| (p.fs, p.mnt.clone()))
+        .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
 }
 
@@ -343,7 +342,7 @@ fn create_mbr(
     Ok(table
         .partitions()
         .iter()
-        .map(|p| (p.fs, p.mnt.clone()))
+        .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
 }
 
@@ -417,6 +416,9 @@ fn create_and_mount_loop_device(
                         unimplemented!();
                     }
                 }
+                Filesystem::Raw(_) => {
+                    debug!("Raw Partition, Skipping.");
+                }
             };
 
             let mount_point = part_desc.1.clone();
@@ -429,7 +431,7 @@ fn create_and_mount_loop_device(
                 );
             }
 
-            Ok((device_part, part_desc.0, mount_point))
+            Ok((device_part, part_desc.0.clone(), mount_point))
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
@@ -529,7 +531,36 @@ fn main() -> Result<(), anyhow::Error> {
             let device = create_and_mount_loop_device(file, &partition_table)?;
             write_manifest_to_dir(&manifest, device.dir.path())?;
 
+            for part in &device.parts {
+                if let Filesystem::Raw(p) = &part.fs {
+                    let source = join_path(device.dir.path(), &p.content)?;
+
+                    if !source.exists() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            format!(
+                                "Raw Partition Source File {} Not Found",
+                                p.content.display()
+                            ),
+                        )
+                        .into());
+                    }
+
+                    let mut source = io::BufReader::new(File::open(&source)?);
+                    let mut dest = io::BufWriter::new(File::options().write(true).open(&part.dev)?);
+
+                    debug!(
+                        "Writing content of file {} to {}",
+                        p.content.display(),
+                        part.dev.display()
+                    );
+
+                    io::copy(&mut source, &mut dest)?;
+                }
+            }
+
             drop(device);
+
             Ok(())
         }
         CliSubcommand::Directory { output, container } => {

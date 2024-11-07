@@ -34,10 +34,16 @@ pub(crate) struct ExtParameters {
     pub(crate) uuid: Option<Uuid>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+pub(crate) struct RawParameters {
+    pub(crate) content: PathBuf,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum Filesystem {
     Fat32(FatParameters),
     Ext4(ExtParameters),
+    Raw(RawParameters),
 }
 
 impl Filesystem {
@@ -114,6 +120,18 @@ impl Filesystem {
                     sectors_per_track,
                 }))
             }
+            "raw" => {
+                let content = labels
+                    .get(&format!(
+                        "com.github.mripard.ocibootstrap.partition.{part_name}.raw.content",
+                    ))
+                    .map(PathBuf::from)
+                    .ok_or(OciBootstrapError::Custom(format!(
+                        "Partition {part_name}: Missing Partition Content",
+                    )))?;
+
+                Ok(Filesystem::Raw(RawParameters { content }))
+            }
             _ => unimplemented!(),
         }
     }
@@ -124,6 +142,7 @@ impl fmt::Display for Filesystem {
         match self {
             Filesystem::Fat32(_) => f.write_str("fat"),
             Filesystem::Ext4(_) => f.write_str("ext4"),
+            Filesystem::Raw(_) => f.write_str("raw"),
         }
     }
 }
