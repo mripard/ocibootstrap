@@ -133,7 +133,7 @@ pub(crate) struct GptPartition {
     pub(crate) uuid: Uuid,
     pub(crate) name: Option<String>,
     pub(crate) mnt: PathBuf,
-    pub(crate) size: Option<u64>,
+    pub(crate) size_bytes: Option<u64>,
     pub(crate) fs: Filesystem,
     pub(crate) bootable: bool,
     pub(crate) platform_required: bool,
@@ -154,7 +154,7 @@ impl GptPartitionTable {
 pub(crate) struct MbrPartition {
     pub(crate) kind: u8,
     pub(crate) mnt: PathBuf,
-    pub(crate) size: Option<u64>,
+    pub(crate) size_bytes: Option<u64>,
     pub(crate) fs: Filesystem,
     pub(crate) bootable: bool,
 }
@@ -219,18 +219,24 @@ impl PartitionTable {
 
             debug!("Partition Mount Point {}", part_mnt.display());
 
-            let part_size = labels
+            let part_size_bytes = labels
                 .get(&format!(
-                    "com.github.mripard.ocibootstrap.partition.{part_name}.size",
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.size_mb",
                 ))
-                .map(|s| {
-                    u64::from_str(s).map(|size| size << 20).map_err(|_err| {
-                        OciBootstrapError::Custom(format!("Partition {idx}: Invalid bool value"))
-                    })
+                .map(|size_str| {
+                    u64::from_str(size_str)
+                        .map(|size_mb| size_mb << 20)
+                        .map_err(|_err| {
+                            OciBootstrapError::Custom(format!(
+                                "Partition {idx}: Invalid bool value"
+                            ))
+                        })
                 })
                 .transpose()?;
 
-            debug!("Partition Size {:#?}", part_size);
+            if let Some(size_bytes) = part_size_bytes {
+                debug!("Partition {idx}: Size {size_bytes} bytes");
+            }
 
             let part_fs = Filesystem::from_labels(labels, part_name)?;
             debug!("Partition {idx}: Filesystem {part_fs}");
@@ -259,7 +265,7 @@ impl PartitionTable {
                 uuid: part_uuid,
                 name: Some(part_name.clone()),
                 mnt: part_mnt,
-                size: part_size,
+                size_bytes: part_size_bytes,
                 fs: part_fs,
                 bootable: part_bootable,
                 platform_required: part_required,
@@ -315,18 +321,24 @@ impl PartitionTable {
 
             debug!("Partition Mount Point {}", part_mnt.display());
 
-            let part_size = labels
+            let part_size_bytes = labels
                 .get(&format!(
-                    "com.github.mripard.ocibootstrap.partition.{part_name}.size",
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.size_mb",
                 ))
-                .map(|s| {
-                    u64::from_str(s).map(|size| size << 20).map_err(|_err| {
-                        OciBootstrapError::Custom(format!("Partition {idx}: Invalid integer value"))
-                    })
+                .map(|size_str| {
+                    u64::from_str(size_str)
+                        .map(|size_mb| size_mb << 20)
+                        .map_err(|_err| {
+                            OciBootstrapError::Custom(format!(
+                                "Partition {idx}: Invalid integer value"
+                            ))
+                        })
                 })
                 .transpose()?;
 
-            debug!("Partition Size {:#?}", part_size);
+            if let Some(size_bytes) = part_size_bytes {
+                debug!("Partition {idx}: Size {size_bytes} bytes");
+            }
 
             let part_fs = Filesystem::from_labels(labels, part_name)?;
             debug!("Partition {idx}: Filesystem {part_fs}");
@@ -344,7 +356,7 @@ impl PartitionTable {
             partitions.push(MbrPartition {
                 kind: part_type,
                 mnt: part_mnt,
-                size: part_size,
+                size_bytes: part_size_bytes,
                 fs: part_fs,
                 bootable: part_bootable,
             });

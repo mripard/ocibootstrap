@@ -277,8 +277,8 @@ fn create_gpt(
             part_builder = part_builder.name(name);
         }
 
-        if let Some(size) = partition.size {
-            part_builder = part_builder.size(size);
+        if let Some(size_bytes) = partition.size_bytes {
+            part_builder = part_builder.size(size_bytes);
         }
 
         let part = part_builder
@@ -308,8 +308,8 @@ fn create_mbr(
     for partition in table.partitions() {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
 
-        if let Some(size) = partition.size {
-            part_builder = part_builder.size(size);
+        if let Some(size_bytes) = partition.size_bytes {
+            part_builder = part_builder.size(size_bytes);
         }
 
         let part = part_builder.bootable(partition.bootable).build();
