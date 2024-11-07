@@ -298,7 +298,7 @@ impl PartitionTable {
                         "com.github.mripard.ocibootstrap.partition.{part_name}.type",
                     ))
                     .ok_or(OciBootstrapError::Custom(format!(
-                        "Partition {idx}: Missing Partition Mount Point",
+                        "Partition {idx}: Missing Partition Type",
                     )))?,
             )
             .map_err(|_err| {
