@@ -153,7 +153,7 @@ impl Drop for DevicePartition {
 
 #[derive(Debug)]
 struct Device {
-    mnts: Vec<DevicePartition>,
+    parts: Vec<DevicePartition>,
 
     dir: TempDir,
     _loopdev: LoopDevice,
@@ -161,7 +161,7 @@ struct Device {
 
 impl Drop for Device {
     fn drop(&mut self) {
-        while let Some(item) = self.mnts.pop() {
+        while let Some(item) = self.parts.pop() {
             drop(item);
         }
     }
@@ -425,7 +425,7 @@ fn create_and_mount_loop_device(
     Ok(Device {
         _loopdev: loop_device,
         dir: temp_dir,
-        mnts: device_partitions,
+        parts: device_partitions,
     })
 }
 
