@@ -152,14 +152,14 @@ impl Drop for DevicePartition {
 }
 
 #[derive(Debug)]
-struct MountPoints {
+struct Device {
     mnts: Vec<DevicePartition>,
 
     dir: TempDir,
     _loopdev: LoopDevice,
 }
 
-impl Drop for MountPoints {
+impl Drop for Device {
     fn drop(&mut self) {
         while let Some(item) = self.mnts.pop() {
             drop(item);
@@ -332,7 +332,7 @@ fn create_mbr(
 fn create_and_mount_loop_device(
     mut file: File,
     partition_table: PartitionTable,
-) -> Result<MountPoints, OciBootstrapError> {
+) -> Result<Device, OciBootstrapError> {
     let partitions = match partition_table {
         PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
         PartitionTable::Mbr(table) => create_mbr(&table, &mut file)?,
@@ -422,7 +422,7 @@ fn create_and_mount_loop_device(
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    Ok(MountPoints {
+    Ok(Device {
         _loopdev: loop_device,
         dir: temp_dir,
         mnts: device_partitions,
@@ -499,10 +499,10 @@ fn main() -> Result<(), anyhow::Error> {
                 .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(&output)?;
-            let mounts = create_and_mount_loop_device(file, manifest.configuration().try_into()?)?;
-            write_manifest_to_dir(&manifest, mounts.dir.path())?;
+            let device = create_and_mount_loop_device(file, manifest.configuration().try_into()?)?;
+            write_manifest_to_dir(&manifest, device.dir.path())?;
 
-            drop(mounts);
+            drop(device);
             Ok(())
         }
         CliSubcommand::Directory { output, container } => {
