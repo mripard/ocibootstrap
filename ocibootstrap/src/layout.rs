@@ -133,6 +133,7 @@ pub(crate) struct GptPartition {
     pub(crate) uuid: Uuid,
     pub(crate) name: Option<String>,
     pub(crate) mnt: PathBuf,
+    pub(crate) offset_lba: Option<usize>,
     pub(crate) size_bytes: Option<usize>,
     pub(crate) fs: Filesystem,
     pub(crate) bootable: bool,
@@ -154,6 +155,7 @@ impl GptPartitionTable {
 pub(crate) struct MbrPartition {
     pub(crate) kind: u8,
     pub(crate) mnt: PathBuf,
+    pub(crate) offset_lba: Option<usize>,
     pub(crate) size_bytes: Option<usize>,
     pub(crate) fs: Filesystem,
     pub(crate) bootable: bool,
@@ -219,6 +221,21 @@ impl PartitionTable {
 
             debug!("Partition Mount Point {}", part_mnt.display());
 
+            let part_offset_lba = labels
+                .get(&format!(
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.offset_lba",
+                ))
+                .map(|s| {
+                    usize::from_str(s).map_err(|_err| {
+                        OciBootstrapError::Custom(format!("Partition {idx}: Invalid integer value"))
+                    })
+                })
+                .transpose()?;
+
+            if let Some(offset_lba) = part_offset_lba {
+                debug!("Partition {idx}: Offset {offset_lba}");
+            }
+
             let part_size_bytes = labels
                 .get(&format!(
                     "com.github.mripard.ocibootstrap.partition.{part_name}.size_mb",
@@ -265,6 +282,7 @@ impl PartitionTable {
                 uuid: part_uuid,
                 name: Some(part_name.clone()),
                 mnt: part_mnt,
+                offset_lba: part_offset_lba,
                 size_bytes: part_size_bytes,
                 fs: part_fs,
                 bootable: part_bootable,
@@ -321,6 +339,21 @@ impl PartitionTable {
 
             debug!("Partition Mount Point {}", part_mnt.display());
 
+            let part_offset_lba = labels
+                .get(&format!(
+                    "com.github.mripard.ocibootstrap.partition.{part_name}.offset_lba",
+                ))
+                .map(|s| {
+                    usize::from_str(s).map_err(|_err| {
+                        OciBootstrapError::Custom(format!("Partition {idx}: Invalid integer value"))
+                    })
+                })
+                .transpose()?;
+
+            if let Some(offset_lba) = part_offset_lba {
+                debug!("Partition {idx}: Offset LBA {offset_lba}");
+            }
+
             let part_size_bytes = labels
                 .get(&format!(
                     "com.github.mripard.ocibootstrap.partition.{part_name}.size_mb",
@@ -356,6 +389,7 @@ impl PartitionTable {
             partitions.push(MbrPartition {
                 kind: part_type,
                 mnt: part_mnt,
+                offset_lba: part_offset_lba,
                 size_bytes: part_size_bytes,
                 fs: part_fs,
                 bootable: part_bootable,

@@ -278,6 +278,10 @@ fn create_gpt(
             part_builder = part_builder.name(name);
         }
 
+        if let Some(offset_lba) = partition.offset_lba {
+            part_builder = part_builder.offset(offset_lba);
+        }
+
         if let Some(size_bytes) = partition.size_bytes {
             part_builder = part_builder.size(size_bytes);
         }
@@ -308,6 +312,10 @@ fn create_mbr(
     let mut builder = MasterBootRecordPartitionTableBuilder::new();
     for partition in table.partitions() {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
+
+        if let Some(offset_lba) = partition.offset_lba {
+            part_builder = part_builder.offset(offset_lba);
+        }
 
         if let Some(size_bytes) = partition.size_bytes {
             part_builder = part_builder.size(size_bytes);
