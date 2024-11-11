@@ -13,6 +13,7 @@ use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
 
+const MBR_HEADER_OFFSET_LBA: usize = 0;
 const MBR_SIZE_LBA: usize = 1;
 
 const GPT_SIGNATURE_HEADER: u64 = 0x5452_4150_2049_4645;
@@ -85,7 +86,7 @@ impl GuidPartitionTable {
             blocks
         );
 
-        let mbr_lba: u64 = 0;
+        let mbr_lba = num_cast!(u64, MBR_HEADER_OFFSET_LBA);
         debug!("Setting up Protective MBR at LBA {}", mbr_lba);
 
         let mbr_size_lba_u64 = num_cast!(u64, MBR_SIZE_LBA);
