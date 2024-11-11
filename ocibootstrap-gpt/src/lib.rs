@@ -463,7 +463,7 @@ mod tests {
     use std::{path::PathBuf, process::Command};
 
     use log::trace;
-    use part::{num_cast, start_end_to_size};
+    use part::{num_cast, start_end_to_size, start_size_to_end};
     use serde::Deserialize;
     use tempfile::NamedTempFile;
     use test_log::test;
@@ -742,20 +742,26 @@ mod tests {
         let first_lba = first_lba();
         let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
 
-        let cutoff_lba = round_down(
-            (last_lba - first_lba) / 2,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        );
+        let available_lbas = start_end_to_size(first_lba, last_lba);
+
+        let first_part_start = first_lba;
+        let first_part_size = available_lbas / 2;
+        let first_part_end = start_size_to_end(first_part_start, first_part_size);
+
+        let second_part_start = first_part_end + 1;
+        let second_part_size = available_lbas - first_part_size;
+        let second_part_end = start_size_to_end(second_part_start, second_part_size);
+        assert_eq!(last_lba, second_part_end);
 
         GuidPartitionTableBuilder::new()
             .add_partition(
                 GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
-                    .size(((cutoff_lba - 1) - first_lba) * BLOCK_SIZE)
+                    .size(first_part_size * BLOCK_SIZE)
                     .build(),
             )
             .add_partition(
                 GuidPartitionBuilder::new(EXTENDED_BOOTLOADER_PART_GUID)
-                    .size((last_lba - cutoff_lba) * BLOCK_SIZE)
+                    .size(second_part_size * BLOCK_SIZE)
                     .build(),
             )
             .build()
@@ -784,13 +790,13 @@ mod tests {
 
         let part = &gpt.partitions[0];
         assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
-        assert_eq!(part.start, gpt.first_lba);
-        assert_eq!(part.size, cutoff_lba - gpt.first_lba);
+        assert_eq!(part.start, first_part_start);
+        assert_eq!(part.size, first_part_size);
 
         let part = &gpt.partitions[1];
         assert_eq!(part.kind, EXTENDED_BOOTLOADER_PART_GUID);
-        assert_eq!(part.start, cutoff_lba);
-        assert_eq!(part.size, gpt.last_lba - cutoff_lba);
+        assert_eq!(part.start, second_part_start);
+        assert_eq!(part.size, second_part_size);
     }
 
     #[test]
