@@ -529,7 +529,7 @@ mod tests {
 
     fn last_lba(size_lba: usize) -> usize {
         round_down(
-            size_lba - GPT_PARTITION_HEADER_SIZE_LBA - GPT_HEADER_SIZE_LBA,
+            size_lba - (GPT_PARTITION_HEADER_SIZE_LBA - GPT_HEADER_SIZE_LBA) - 1,
             GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
         )
     }
