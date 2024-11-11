@@ -527,6 +527,13 @@ mod tests {
         )
     }
 
+    fn last_lba(size_lba: usize) -> usize {
+        round_down(
+            size_lba - GPT_PARTITION_HEADER_SIZE_LBA - GPT_HEADER_SIZE_LBA,
+            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+        )
+    }
+
     #[test]
     fn test_table_no_partition() {
         let temp_file = NamedTempFile::new().unwrap();
@@ -553,14 +560,10 @@ mod tests {
         };
 
         assert_eq!(gpt.first_lba, first_lba());
-
-        let last_lba = round_down(
-            (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+        assert_eq!(
+            gpt.last_lba,
+            last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
         );
-        assert_eq!(gpt.last_lba, last_lba);
         assert_eq!(gpt.partitions.len(), 0);
     }
 
@@ -645,12 +648,7 @@ mod tests {
         let first_lba = first_lba();
         assert_eq!(gpt.first_lba, first_lba);
 
-        let last_lba = round_down(
-            (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        );
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
         assert_eq!(gpt.last_lba, last_lba);
         assert_eq!(gpt.partitions.len(), 1);
 
@@ -698,12 +696,7 @@ mod tests {
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let first_lba = first_lba();
-        let last_lba = round_down(
-            (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        );
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
 
         GuidPartitionTableBuilder::new()
             .add_partition(
@@ -747,12 +740,7 @@ mod tests {
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let first_lba = first_lba();
-        let last_lba = round_down(
-            (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        );
+        let last_lba = last_lba(num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE);
 
         let cutoff_lba = round_down(
             (last_lba - first_lba) / 2,
