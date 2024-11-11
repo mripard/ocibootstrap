@@ -523,7 +523,6 @@ mod tests {
     #[test]
     fn test_table_no_partition() {
         let temp_file = NamedTempFile::new().unwrap();
-
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         GuidPartitionTableBuilder::new()
@@ -564,10 +563,8 @@ mod tests {
 
     #[test]
     fn test_table_with_uuid() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let uuid = Uuid::new_v4();
         GuidPartitionTableBuilder::new_with_uuid(uuid)
@@ -616,10 +613,8 @@ mod tests {
 
     #[test]
     fn test_one_partition_no_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         GuidPartitionTableBuilder::new()
             .add_partition(GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID).build())
@@ -667,10 +662,8 @@ mod tests {
 
     #[test]
     fn test_partition_with_uuid() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let uuid = Uuid::new_v4();
         GuidPartitionTableBuilder::new()
@@ -701,10 +694,8 @@ mod tests {
 
     #[test]
     fn test_one_partition_exact_aligned_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let first_lba = round_up(
             MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
@@ -756,10 +747,8 @@ mod tests {
 
     #[test]
     fn test_two_partitions_exact_aligned_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         let first_lba = round_up(
             MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
@@ -826,10 +815,8 @@ mod tests {
 
     #[test]
     fn test_multiple_partitions_no_size() {
-        let file_size = TEMP_FILE_SIZE;
-
         let temp_file = NamedTempFile::new().unwrap();
-        temp_file.as_file().set_len(file_size).unwrap();
+        temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
         GuidPartitionTableBuilder::new()
             .add_partition(GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID).build())
