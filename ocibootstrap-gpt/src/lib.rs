@@ -130,9 +130,7 @@ impl GuidPartitionTable {
             .iter()
             .enumerate()
             .map(|(idx, p)| {
-                Ok(if let Some(size) = p.builder.size {
-                    let size_lba = num_cast!(usize, size) / BLOCK_SIZE;
-
+                Ok(if let Some(size_lba) = p.builder.size_lba {
                     debug!("Partition {idx}: Size {size_lba} LBAs");
 
                     if size_lba > available_blocks {
@@ -164,14 +162,14 @@ impl GuidPartitionTable {
         let parts = part_sizes_lba
             .iter()
             .map(|o| {
-                let part_size = if let Some(size) = o {
-                    *size
+                let size_lba = if let Some(size_lba) = o {
+                    *size_lba
                 } else {
                     available_blocks
                 };
 
                 let offset = next_lba;
-                next_lba += part_size;
+                next_lba += size_lba;
 
                 (offset, next_lba - 1)
             })
@@ -376,7 +374,7 @@ pub struct GuidPartitionBuilder {
     type_: Uuid,
     guid: Uuid,
     name: Option<String>,
-    size: Option<usize>,
+    size_lba: Option<usize>,
     bits: u64,
 }
 
@@ -389,7 +387,7 @@ impl GuidPartitionBuilder {
             type_: part_type,
             guid: part_guid,
             name: None,
-            size: None,
+            size_lba: None,
             bits: 0,
         }
     }
@@ -408,7 +406,7 @@ impl GuidPartitionBuilder {
     /// size-less partition is allowed to be part of a [`GuidPartitionTable`].
     #[must_use]
     pub fn size(mut self, size: usize) -> Self {
-        self.size = Some(size);
+        self.size_lba = Some(size / BLOCK_SIZE);
         self
     }
 
