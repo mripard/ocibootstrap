@@ -8,7 +8,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use part::{num_cast, round_down, round_up, start_end_to_size};
+use part::{num_cast, start_end_to_size};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -23,8 +23,6 @@ const GPT_PARTITION_NUM: usize = 128;
 const GPT_PARTITION_ENTRY_SIZE: usize = 128;
 const GPT_PARTITION_HEADER_SIZE_LBA: usize =
     (GPT_PARTITION_NUM * GPT_PARTITION_ENTRY_SIZE) / BLOCK_SIZE;
-
-const GPT_PARTITION_ALIGNMENT: usize = 4 << 20;
 
 /// Standard EFI System Partition GUID. See the
 /// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
@@ -96,12 +94,7 @@ impl GuidPartitionTable {
 
         debug!("GPT Partition Table Size: {GPT_PARTITION_HEADER_SIZE_LBA} LBAs");
 
-        let first_usable_lba_unaligned = primary_gpt_parts_lba + GPT_PARTITION_HEADER_SIZE_LBA;
-        debug!("First Usable LBA (Unaligned): {first_usable_lba_unaligned}");
-
-        let gpt_partition_alignment_lba = GPT_PARTITION_ALIGNMENT / BLOCK_SIZE;
-
-        let first_usable_lba = round_up(first_usable_lba_unaligned, gpt_partition_alignment_lba);
+        let first_usable_lba = primary_gpt_parts_lba + GPT_PARTITION_HEADER_SIZE_LBA;
         debug!("First Usable LBA: {first_usable_lba}");
 
         if first_usable_lba >= blocks {
@@ -117,10 +110,10 @@ impl GuidPartitionTable {
         let backup_gpt_parts_lba = backup_gpt_lba - GPT_PARTITION_HEADER_SIZE_LBA;
         debug!("Backup GPT Partition table is located at LBA {backup_gpt_parts_lba}");
 
-        let last_usable_lba = round_down(backup_gpt_parts_lba - 1, gpt_partition_alignment_lba);
+        let last_usable_lba = backup_gpt_parts_lba - 1;
         debug!("Last Usable LBA: {last_usable_lba}");
 
-        if first_usable_lba + gpt_partition_alignment_lba > last_usable_lba {
+        if first_usable_lba > last_usable_lba {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "File is too small",
@@ -139,21 +132,20 @@ impl GuidPartitionTable {
             .map(|(idx, p)| {
                 Ok(if let Some(size) = p.builder.size {
                     let size_lba = num_cast!(usize, size) / BLOCK_SIZE;
-                    let aligned_size_lba = round_up(size_lba, gpt_partition_alignment_lba);
 
-                    debug!("Partition {idx}: Aligned Size {aligned_size_lba} LBAs");
+                    debug!("Partition {idx}: Size {size_lba} LBAs");
 
-                    if aligned_size_lba > available_blocks {
+                    if size_lba > available_blocks {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             "No space left on the device",
                         ));
                     }
 
-                    available_blocks -= aligned_size_lba;
+                    available_blocks -= size_lba;
                     debug!("Available LBAs {available_blocks}");
 
-                    Some(aligned_size_lba)
+                    Some(size_lba)
                 } else {
                     if found_no_size {
                         return Err(io::Error::new(
@@ -470,9 +462,9 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        round_down, round_up, GuidPartitionBuilder, GuidPartitionTableBuilder, BLOCK_SIZE,
-        EFI_SYSTEM_PART_GUID, EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA,
-        GPT_PARTITION_ALIGNMENT, GPT_PARTITION_HEADER_SIZE_LBA, MBR_SIZE_LBA,
+        GuidPartitionBuilder, GuidPartitionTableBuilder, BLOCK_SIZE, EFI_SYSTEM_PART_GUID,
+        EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA, GPT_PARTITION_HEADER_SIZE_LBA,
+        MBR_SIZE_LBA,
     };
 
     const TEMP_FILE_SIZE: u64 = 2 << 30;
@@ -503,6 +495,8 @@ mod tests {
         last_lba: usize,
         #[serde(rename = "sectorsize")]
         sector_size: usize,
+        #[serde(rename = "grain")]
+        _alignment_size: Option<String>,
         #[serde(default)]
         partitions: Vec<SfDiskGptPartition>,
     }
@@ -521,17 +515,11 @@ mod tests {
     }
 
     fn first_lba() -> usize {
-        round_up(
-            MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
+        MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA
     }
 
     fn last_lba(size_lba: usize) -> usize {
-        round_down(
-            size_lba - (GPT_PARTITION_HEADER_SIZE_LBA - GPT_HEADER_SIZE_LBA) - 1,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
+        size_lba - (GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA) - 1
     }
 
     #[test]
@@ -691,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn test_one_partition_exact_aligned_size() {
+    fn test_one_partition_exact_size() {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
@@ -735,7 +723,7 @@ mod tests {
     }
 
     #[test]
-    fn test_two_partitions_exact_aligned_size() {
+    fn test_two_partitions_exact_size() {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(TEMP_FILE_SIZE).unwrap();
 
