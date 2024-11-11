@@ -689,7 +689,7 @@ mod tests {
         GuidPartitionTableBuilder::new()
             .add_partition(
                 GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
-                    .size((last_lba - first_lba) * BLOCK_SIZE)
+                    .size(start_end_to_size(first_lba, last_lba) * BLOCK_SIZE)
                     .build(),
             )
             .build()
@@ -719,7 +719,7 @@ mod tests {
         let part = &gpt.partitions[0];
         assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
         assert_eq!(part.start, gpt.first_lba);
-        assert_eq!(part.size, gpt.last_lba - gpt.first_lba);
+        assert_eq!(part.size, start_end_to_size(first_lba, last_lba));
     }
 
     #[test]
