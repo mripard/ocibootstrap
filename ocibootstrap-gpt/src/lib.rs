@@ -8,7 +8,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use part::{num_cast, start_end_to_size};
+use part::{num_cast, start_end_to_size, PartitionLayout};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -58,7 +58,7 @@ struct GuidPartitionTableLayout {
     primary_gpt_header_lba: usize,
     primary_gpt_table_lba: usize,
     first_usable: usize,
-    partitions_offset: Vec<(usize, usize)>,
+    partitions_offset: Vec<PartitionLayout>,
     last_usable: usize,
     backup_gpt_table_lba: usize,
     backup_gpt_header_lba: usize,
@@ -171,9 +171,12 @@ impl GuidPartitionTable {
                 let offset = next_lba;
                 next_lba += size_lba;
 
-                (offset, next_lba - 1)
+                PartitionLayout {
+                    start_lba: offset,
+                    end_lba: next_lba - 1,
+                }
             })
-            .collect::<Vec<(usize, usize)>>();
+            .collect::<Vec<PartitionLayout>>();
 
         Ok(GuidPartitionTableLayout {
             block_size: BLOCK_SIZE,
@@ -228,15 +231,15 @@ impl GuidPartitionTable {
         primary_gpt[84..88].copy_from_slice(&part_entry_size.to_le_bytes());
 
         let mut parts: Vec<u8> = Vec::new();
-        for (part, (first_lba, last_lba)) in
+        for (part, layout) in
             Iterator::zip(self.builder.partitions.iter(), cfg.partitions_offset.iter())
         {
             let mut entry = [0u8; GPT_PARTITION_ENTRY_SIZE];
 
             entry[0..16].copy_from_slice(&guid_bytes(&part.builder.type_));
             entry[16..32].copy_from_slice(&guid_bytes(&part.builder.guid));
-            entry[32..40].copy_from_slice(&first_lba.to_le_bytes());
-            entry[40..48].copy_from_slice(&last_lba.to_le_bytes());
+            entry[32..40].copy_from_slice(&layout.start_lba.to_le_bytes());
+            entry[40..48].copy_from_slice(&layout.end_lba.to_le_bytes());
 
             entry[48..56].copy_from_slice(&part.builder.bits.to_le_bytes());
 
