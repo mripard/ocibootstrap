@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use core::ops::{Div, Mul, Rem};
+use core::ops::{Add, Div, Mul, Rem, Sub};
 
 use num_traits::{ConstOne, ConstZero};
 
@@ -72,4 +72,52 @@ macro_rules! num_cast {
             $crate::type_name_of_expr($v),
         ))
     };
+}
+
+/// Computes the size between a start and end indexes
+///
+/// # Panics
+///
+/// If start or end are negative, or if end is lower than start.
+pub fn start_end_to_size<T>(start: T, end: T) -> T
+where
+    T: Add<Output = T> + Ord + ConstOne + ConstZero + Sub<Output = T>,
+{
+    assert!(start >= T::ZERO, "Negative start offset");
+    assert!(end >= T::ZERO, "Negative end offset");
+    assert!(end >= start, "End offset is lower than start offset");
+
+    (end - start) + T::ONE
+}
+
+/// Computes the end index from a start index and a size
+///
+/// # Panics
+///
+/// If start is negative, or if the size is lower than or equal to zero.
+pub fn start_size_to_end<T>(start: T, size: T) -> T
+where
+    T: Add<Output = T> + ConstOne + ConstZero + Ord + Sub<Output = T>,
+{
+    assert!(start >= T::ZERO, "Negative start offset");
+    assert!(size >= T::ONE, "Size too small");
+
+    (start + size) - T::ONE
+}
+
+/// Computes the start index from a size and end index
+///
+/// # Panics
+///
+/// If size or end are negative, if the size is zero, or if the start index
+/// would be negative.
+pub fn size_end_to_start<T>(size: T, end: T) -> T
+where
+    T: Add<Output = T> + Copy + ConstOne + ConstZero + Ord + Sub<Output = T>,
+{
+    assert!(size >= T::ONE, "Size too small");
+    assert!(end >= T::ZERO, "Negative end offset");
+    assert!(end >= (size - T::ONE), "Size too large for end offset.");
+
+    end - (size - T::ONE)
 }

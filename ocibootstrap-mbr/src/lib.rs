@@ -9,7 +9,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use num_traits::ToPrimitive;
-use part::{div_round_up, num_cast};
+use part::{div_round_up, num_cast, start_end_to_size};
 
 const LBA_SIZE: usize = 512;
 
@@ -135,7 +135,7 @@ impl MasterBootRecordPartitionTable {
             ));
         }
 
-        let mut available_blocks = blocks - first_usable_lba;
+        let mut available_blocks = start_end_to_size(first_usable_lba, last_usable_lba);
         debug!("Available LBAs: {available_blocks}");
 
         let mut found_no_size = false;

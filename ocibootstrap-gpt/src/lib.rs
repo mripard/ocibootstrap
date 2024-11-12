@@ -8,7 +8,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use part::{num_cast, round_down, round_up};
+use part::{num_cast, round_down, round_up, start_end_to_size};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -130,7 +130,7 @@ impl GuidPartitionTable {
             ));
         }
 
-        let mut available_blocks = last_usable_lba - first_usable_lba;
+        let mut available_blocks = start_end_to_size(first_usable_lba, last_usable_lba);
         debug!("Available LBAs: {available_blocks}");
 
         let mut found_no_size = false;
@@ -287,7 +287,7 @@ impl GuidPartitionTable {
             .add_partition(
                 MasterBootRecordPartitionBuilder::new(0xee)
                     .size(
-                        ((cfg.backup_gpt_header_lba + 1) - cfg.primary_gpt_header_lba)
+                        start_end_to_size(cfg.primary_gpt_header_lba, cfg.backup_gpt_header_lba)
                             * cfg.block_size,
                     )
                     .build(),
@@ -457,7 +457,7 @@ mod tests {
     use std::{path::PathBuf, process::Command};
 
     use log::trace;
-    use part::num_cast;
+    use part::{num_cast, start_end_to_size};
     use serde::Deserialize;
     use tempfile::NamedTempFile;
     use test_log::test;
@@ -672,7 +672,7 @@ mod tests {
         let part = &gpt.partitions[0];
         assert_eq!(part.kind, EFI_SYSTEM_PART_GUID);
         assert_eq!(part.start, gpt.first_lba);
-        assert_eq!(part.size, gpt.last_lba - gpt.first_lba);
+        assert_eq!(part.size, start_end_to_size(first_lba, last_lba));
     }
 
     #[test]
