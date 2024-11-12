@@ -8,7 +8,8 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, Euclid, FromPrimitive, Num, ToPrimitive};
+use num_traits::ToPrimitive;
+use part::{round_down, round_up};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -39,31 +40,6 @@ pub const EXTENDED_BOOTLOADER_PART_GUID: Uuid = uuid!("bc13c2ff-59e6-4262-a352-b
 /// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
 /// for further details.
 pub const ROOT_PART_GUID_ARM64: Uuid = uuid!("b921b045-1df0-41c3-af44-4c6f280d3fae");
-
-fn round_down<T>(number: T, multiple: T) -> T
-where
-    T: Copy + Num + CheckedDiv + CheckedMul,
-{
-    let div = T::checked_div(&number, &multiple).expect("Division by zero or would overflow");
-
-    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
-}
-
-fn round_up<T>(number: T, multiple: T) -> T
-where
-    T: Copy + Num + CheckedAdd + CheckedMul + Euclid + FromPrimitive,
-{
-    let rem = T::rem_euclid(&number, &multiple);
-
-    if rem.is_zero() {
-        return number;
-    }
-
-    let div = T::checked_add(&T::div_euclid(&number, &multiple), &T::one())
-        .expect("Addition would overflow");
-
-    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
-}
 
 fn guid_bytes(uuid: &Uuid) -> [u8; 16] {
     let uuid_fields = uuid.as_fields();

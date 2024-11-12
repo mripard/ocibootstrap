@@ -8,7 +8,8 @@ use std::{
 
 use bit_field::BitField;
 use log::debug;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, Euclid, Num, ToPrimitive};
+use num_traits::ToPrimitive;
+use part::div_round_up;
 
 const LBA_SIZE: usize = 512;
 
@@ -16,31 +17,6 @@ const MBR_LBA_OFFSET: usize = 0;
 const MBR_LBA_SIZE: usize = 1;
 const MBR_PART_ENTRY_OFFSET: usize = 446;
 const MBR_PART_ENTRY_SIZE: usize = 16;
-
-fn round_up<T>(number: T, multiple: T) -> T
-where
-    T: Copy + Num + CheckedAdd + CheckedMul + Euclid,
-{
-    let rem = T::rem_euclid(&number, &multiple);
-
-    if rem.is_zero() {
-        return number;
-    }
-
-    let div = T::checked_add(&T::div_euclid(&number, &multiple), &T::one())
-        .expect("Addition would overflow");
-
-    T::checked_mul(&div, &multiple).expect("Multiplication would overflow")
-}
-
-fn div_round_up<T>(numerator: T, denominator: T) -> T
-where
-    T: Copy + Num + CheckedAdd + CheckedMul + CheckedDiv + Euclid,
-{
-    let rounded = round_up(numerator, denominator);
-
-    T::checked_div(&rounded, &denominator).expect("Division by zero or would overflow")
-}
 
 /// An MBR Partition Entry
 #[derive(Debug)]

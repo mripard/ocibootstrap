@@ -19,6 +19,7 @@ crc32fast = { version = "1.4.2", default-features = false }
 log = { version = "0.4.22", default-features = false }
 mbr = { package = "ocibootstrap-mbr", path = "../ocibootstrap-mbr" }
 num-traits = { version = "0.2.19", default-features = false }
+part = { package = "ocibootstrap-part", path = "../ocibootstrap-part" }
 uuid = { version = "1.10.0", default-features = false, features = [
     "serde",
     "v4",
