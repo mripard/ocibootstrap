@@ -14,4 +14,8 @@ repository = "https://github.com/mripard/ocibootstrap/"
 workspace = true
 
 [dependencies]
+log = { version = "0.4.22", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
+
+[dev-dependencies]
+test-log = { version = "0.2.16", default-features = false, features = ["log"] }

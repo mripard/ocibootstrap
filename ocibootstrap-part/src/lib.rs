@@ -1,7 +1,9 @@
 #![doc = include_str!("../README.md")]
 
 use core::ops::{Add, Div, Mul, Rem, Sub};
+use std::io;
 
+use log::debug;
 use num_traits::{ConstOne, ConstZero};
 
 /// Returns a rounded down number to the nearest multiple
@@ -120,4 +122,186 @@ where
     assert!(end >= (size - T::ONE), "Size too large for end offset.");
 
     end - (size - T::ONE)
+}
+
+/// Size and Offset Partition Requirements for our layout
+#[derive(Debug)]
+pub struct PartitionLayoutHint {
+    /// Offset Requirement, in LBAs
+    pub offset_lba: Option<usize>,
+
+    /// Size Requirement, in LBAs
+    pub size_lba: Option<usize>,
+}
+
+/// Partition Layout
+#[derive(Eq, Debug, PartialEq)]
+pub struct PartitionLayout {
+    /// Partition Start LBA
+    pub start_lba: usize,
+
+    /// Partition End LBA
+    pub end_lba: usize,
+}
+
+/// Builds the partition layout for partition table out of a set of constraints
+///
+/// # Errors
+///
+/// Returns an [`std::io::Error`] if the constraints can't be met
+///
+/// # Panics
+///
+/// If the code confused itself
+#[expect(clippy::too_many_lines)]
+#[expect(clippy::panic_in_result_fn)]
+pub fn build_layout(
+    first_usable_lba: usize,
+    last_usable_lba: usize,
+    parts: &[PartitionLayoutHint],
+) -> Result<Vec<PartitionLayout>, io::Error> {
+    let missing_size_count = parts.iter().filter(|p| p.size_lba.is_none()).count();
+    if missing_size_count > 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Multiple Partitions with no size",
+        ));
+    }
+
+    let mut array = Vec::with_capacity(parts.len());
+    array.resize_with(parts.len(), Default::default);
+
+    let mut missing_size_part_idx = None;
+    let mut missing_size_part_start = None;
+    let mut first_available_lba = first_usable_lba;
+
+    for idx in 0..parts.len() {
+        let part = &parts[idx];
+
+        let part_offset_lba = if let Some(offset_lba) = part.offset_lba {
+            offset_lba
+        } else {
+            first_available_lba
+        };
+
+        debug!("Partition {idx}: Offset is {:#?}", part_offset_lba);
+
+        let Some(part_size_lba) = part.size_lba else {
+            debug!("Partition {idx}: No size provided. Start offset is {part_offset_lba}");
+
+            missing_size_part_start = Some(part_offset_lba);
+            missing_size_part_idx = Some(idx);
+            break;
+        };
+
+        debug!("Partition {idx}: Size is {:#?}", part_size_lba);
+
+        first_available_lba = part_offset_lba + part_size_lba;
+        array[idx] = Some((part_offset_lba, part_size_lba));
+    }
+
+    if let Some(missing_idx) = missing_size_part_idx {
+        debug!("Partition {missing_idx}: Missing size, we'll have to figure it out.");
+
+        let missing_part_offset_lba = missing_size_part_start.unwrap_or_else(|| {
+            unreachable!("If we have a index for the missing size partition, we have a start LBA.")
+        });
+
+        let mut last_allocated_lba = last_usable_lba + 1;
+        for idx in (missing_idx..parts.len()).rev() {
+            let part = &parts[idx];
+
+            let last_available_lba = last_allocated_lba - 1;
+            let (part_offset_lba, part_size_lba) = if let (Some(size_lba), Some(offset_lba)) =
+                (part.size_lba, part.offset_lba)
+            {
+                debug!(
+                    "Partition {idx}: Fixed offset (LBA {offset_lba}) and size ({size_lba} LBAs)"
+                );
+
+                (offset_lba, size_lba)
+            } else if let (Some(size_lba), None) = (part.size_lba, part.offset_lba) {
+                debug!("Partition {idx}: Fixed size ({size_lba} LBAs). Last Available LBA {last_available_lba}");
+
+                let offset_lba = last_available_lba - (size_lba - 1);
+
+                debug!(
+                        "Partition {idx}: Fixed size ({size_lba} LBAs). Offset derived at LBA {offset_lba}"
+                    );
+
+                (offset_lba, size_lba)
+            } else if let (None, Some(offset_lba)) = (part.size_lba, part.offset_lba) {
+                let size_lba = (last_available_lba - offset_lba) + 1;
+
+                debug!(
+                        "Partition {idx}: Fixed offset (LBA {offset_lba}). Size derived at {size_lba} LBAs"
+                    );
+
+                (offset_lba, size_lba)
+            } else {
+                let offset_lba = missing_part_offset_lba;
+                let size_lba = (last_available_lba - missing_part_offset_lba) + 1;
+
+                debug!(
+                        "Partition {idx}: Offset derived at LBA {offset_lba}. Size derived at {size_lba} LBAs"
+                    );
+
+                (offset_lba, size_lba)
+            };
+
+            last_allocated_lba = part_offset_lba;
+            array[idx] = Some((part_offset_lba, part_size_lba));
+        }
+    }
+
+    assert_eq!(
+        array.len(),
+        parts.len(),
+        "Our array must and should be the same size than the partitions slice."
+    );
+
+    assert!(
+        !array.iter().any(Option::is_none),
+        "Our array must and should not have any None by now."
+    );
+
+    let mut next_available_lba = first_usable_lba;
+    for (offset, size) in array.iter().flatten() {
+        if *offset < first_usable_lba {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Partition starts before first usable LBA.",
+            ));
+        }
+
+        if *offset < next_available_lba {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Partition overlaps with previous partition.",
+            ));
+        }
+
+        let end = offset + (size - 1);
+        if end > last_usable_lba {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Partition overflows the device",
+            ));
+        }
+
+        next_available_lba = offset + size;
+    }
+
+    return Ok(array
+        .iter()
+        .map(|o| {
+            let (offset, size) = o
+                .unwrap_or_else(|| unreachable!("We already checked above that we only had Somes"));
+
+            PartitionLayout {
+                start_lba: offset,
+                end_lba: start_size_to_end(offset, size),
+            }
+        })
+        .collect());
 }
