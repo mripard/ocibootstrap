@@ -9,7 +9,9 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use num_traits::ToPrimitive;
-use part::{div_round_up, num_cast, start_end_to_size, PartitionLayout};
+use part::{
+    build_layout, div_round_up, num_cast, start_end_to_size, PartitionLayout, PartitionLayoutHint,
+};
 
 const LBA_SIZE: usize = 512;
 
@@ -130,68 +132,20 @@ impl MasterBootRecordPartitionTable {
             ));
         }
 
-        let mut available_blocks = start_end_to_size(first_usable_lba, last_usable_lba);
-        debug!("Available LBAs: {available_blocks}");
-
-        let mut found_no_size = false;
-        let part_sizes_lba = self
+        let parts_hints = self
             .builder
             .partitions
             .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                Ok(if let Some(size_lba) = p.builder.size_lba {
-                    debug!("Partition {idx}: Size {size_lba} LBAs");
-
-                    if size_lba > available_blocks {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "No space left on the device",
-                        ));
-                    }
-
-                    available_blocks -= size_lba;
-                    debug!("Available LBAs {available_blocks}");
-
-                    Some(size_lba)
-                } else {
-                    if found_no_size {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Multiple Partitions with no size",
-                        ));
-                    }
-
-                    found_no_size = true;
-                    None
-                })
+            .map(|p| PartitionLayoutHint {
+                offset_lba: None,
+                size_lba: p.builder.size_lba,
             })
-            .collect::<Result<Vec<Option<usize>>, io::Error>>()?;
-
-        let mut next_lba = first_usable_lba;
-        let parts = part_sizes_lba
-            .iter()
-            .map(|o| {
-                let part_size = if let Some(size) = o {
-                    *size
-                } else {
-                    available_blocks
-                };
-
-                let offset = next_lba;
-                next_lba += part_size;
-
-                PartitionLayout {
-                    start_lba: offset,
-                    end_lba: next_lba - 1,
-                }
-            })
-            .collect::<Vec<PartitionLayout>>();
+            .collect::<Vec<_>>();
 
         Ok(MBRTableLayout {
             block_size: LBA_SIZE,
             mbr_header_lba: MBR_LBA_OFFSET,
-            partitions_offset: parts,
+            partitions_offset: build_layout(first_usable_lba, last_usable_lba, &parts_hints)?,
         })
     }
 
