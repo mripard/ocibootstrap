@@ -51,3 +51,25 @@ where
 
     rounded / denominator
 }
+
+#[must_use]
+#[doc(hidden)]
+pub fn type_name_of_expr<T>(_: T) -> &'static str {
+    core::any::type_name::<T>()
+}
+
+/// Converts an integer to another integer type
+///
+/// # Panics
+///
+/// If the conversion fails.
+#[macro_export]
+macro_rules! num_cast {
+    ($t: ty, $v: expr) => {
+        <$t>::try_from($v).expect(&format!(
+            "Integer Overflow ({} to {})",
+            core::any::type_name::<$t>(),
+            $crate::type_name_of_expr($v),
+        ))
+    };
+}

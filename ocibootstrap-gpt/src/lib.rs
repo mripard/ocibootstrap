@@ -8,8 +8,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use num_traits::ToPrimitive;
-use part::{round_down, round_up};
+use part::{num_cast, round_down, round_up};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -77,10 +76,7 @@ impl GuidPartitionTable {
     fn build_gpt_layout(&self, file: &File) -> Result<GuidPartitionTableLayout, io::Error> {
         let metadata = file.metadata()?;
 
-        let block_size_u64 = BLOCK_SIZE
-            .to_u64()
-            .expect("Integer Overflow (usize to u64)");
-
+        let block_size_u64 = num_cast!(u64, BLOCK_SIZE);
         let blocks = metadata.len() / block_size_u64;
 
         debug!(
@@ -92,32 +88,21 @@ impl GuidPartitionTable {
         let mbr_lba: u64 = 0;
         debug!("Setting up Protective MBR at LBA {}", mbr_lba);
 
-        let mbr_size_lba_u64 = MBR_SIZE_LBA
-            .to_u64()
-            .expect("Integer Overflow (usize to u64)");
-
+        let mbr_size_lba_u64 = num_cast!(u64, MBR_SIZE_LBA);
         let primary_gpt_lba = mbr_lba + mbr_size_lba_u64;
         debug!("Primary GPT Header is located at LBA {primary_gpt_lba}");
 
-        let gpt_header_size_lba_u64 = GPT_HEADER_SIZE_LBA
-            .to_u64()
-            .expect("Integer Overflow (usize to u64)");
-
+        let gpt_header_size_lba_u64 = num_cast!(u64, GPT_HEADER_SIZE_LBA);
         let primary_gpt_parts_lba = primary_gpt_lba + gpt_header_size_lba_u64;
         debug!("Primary GPT Partition table is located at LBA {primary_gpt_parts_lba}");
 
-        let gpt_partition_header_size_lba_u64 = GPT_PARTITION_HEADER_SIZE_LBA
-            .to_u64()
-            .expect("Integer Overflow (usize to u64)");
+        let gpt_partition_header_size_lba_u64 = num_cast!(u64, GPT_PARTITION_HEADER_SIZE_LBA);
         debug!("GPT Partition Table Size: {gpt_partition_header_size_lba_u64} LBAs");
 
         let first_usable_lba_unaligned = primary_gpt_parts_lba + gpt_partition_header_size_lba_u64;
         debug!("First Usable LBA (Unaligned): {first_usable_lba_unaligned}");
 
-        let gpt_partition_alignment_lba_u64 = (GPT_PARTITION_ALIGNMENT / BLOCK_SIZE)
-            .to_u64()
-            .expect("Integer Overflow (usize to u64)");
-
+        let gpt_partition_alignment_lba_u64 = num_cast!(u64, GPT_PARTITION_ALIGNMENT / BLOCK_SIZE);
         let first_usable_lba =
             round_up(first_usable_lba_unaligned, gpt_partition_alignment_lba_u64);
         debug!("First Usable LBA: {first_usable_lba}");
@@ -234,11 +219,9 @@ impl GuidPartitionTable {
         primary_gpt[0..8].copy_from_slice(&GPT_SIGNATURE_HEADER.to_le_bytes());
         primary_gpt[8..12].copy_from_slice(&GPT_VERSION_HEADER.to_le_bytes());
 
-        let len = primary_gpt
-            .len()
-            .to_u32()
-            .expect("Integer Overflow (usize to u32)");
+        let len = num_cast!(u32, primary_gpt.len());
         debug!("Header Len is {len}");
+
         primary_gpt[12..16].copy_from_slice(&len.to_le_bytes());
         primary_gpt[16..20].copy_from_slice(&[0, 0, 0, 0]);
         primary_gpt[20..24].copy_from_slice(&[0, 0, 0, 0]);
@@ -251,14 +234,10 @@ impl GuidPartitionTable {
         let first_part_entry_lba = 2u64;
         primary_gpt[72..80].copy_from_slice(&first_part_entry_lba.to_le_bytes());
 
-        let num_parts = GPT_PARTITION_NUM
-            .to_u32()
-            .expect("Integer Overflow (usize to u32)");
+        let num_parts = num_cast!(u32, GPT_PARTITION_NUM);
         primary_gpt[80..84].copy_from_slice(&num_parts.to_le_bytes());
 
-        let part_entry_size = GPT_PARTITION_ENTRY_SIZE
-            .to_u32()
-            .expect("Integer Overflow (usize to u32).");
+        let part_entry_size = num_cast!(u32, GPT_PARTITION_ENTRY_SIZE);
         primary_gpt[84..88].copy_from_slice(&part_entry_size.to_le_bytes());
 
         let mut parts: Vec<u8> = Vec::new();
@@ -478,7 +457,7 @@ mod tests {
     use std::{path::PathBuf, process::Command};
 
     use log::trace;
-    use num_traits::ToPrimitive;
+    use part::num_cast;
     use serde::Deserialize;
     use tempfile::NamedTempFile;
     use test_log::test;
@@ -561,25 +540,27 @@ mod tests {
             _ => panic!(),
         };
 
-        let block_size_u64 = BLOCK_SIZE.to_u64().unwrap();
+        let block_size_u64 = num_cast!(u64, BLOCK_SIZE);
         assert_eq!(gpt.sector_size, block_size_u64);
 
-        let first_lba = round_up(
-            MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let first_lba = num_cast!(
+            u64,
+            round_up(
+                MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
         assert_eq!(gpt.first_lba, first_lba);
 
-        let last_lba = round_down(
-            (TEMP_FILE_SIZE.to_usize().unwrap() / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let last_lba = num_cast!(
+            u64,
+            round_down(
+                (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
+                    - GPT_PARTITION_HEADER_SIZE_LBA
+                    - GPT_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
         assert_eq!(gpt.last_lba, last_lba);
         assert_eq!(gpt.partitions.len(), 0);
     }
@@ -624,11 +605,10 @@ mod tests {
         // the Backup Header. The total overhead is thus 67 LBAs.
         temp_file
             .as_file()
-            .set_len(
-                ((MBR_SIZE_LBA + 2 * GPT_HEADER_SIZE_LBA + 2 * GPT_PARTITION_HEADER_SIZE_LBA) - 1)
-                    .to_u64()
-                    .unwrap(),
-            )
+            .set_len(num_cast!(
+                u64,
+                MBR_SIZE_LBA + 2 * GPT_HEADER_SIZE_LBA + 2 * GPT_PARTITION_HEADER_SIZE_LBA - 1
+            ))
             .unwrap();
 
         GuidPartitionTableBuilder::new()
@@ -665,25 +645,27 @@ mod tests {
             _ => panic!(),
         };
 
-        let block_size_u64 = BLOCK_SIZE.to_u64().unwrap();
+        let block_size_u64 = num_cast!(u64, BLOCK_SIZE);
         assert_eq!(gpt.sector_size, block_size_u64);
 
-        let first_lba = round_up(
-            MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let first_lba = num_cast!(
+            u64,
+            round_up(
+                MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
         assert_eq!(gpt.first_lba, first_lba);
 
-        let last_lba = round_down(
-            (TEMP_FILE_SIZE.to_usize().unwrap() / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let last_lba = num_cast!(
+            u64,
+            round_down(
+                (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
+                    - GPT_PARTITION_HEADER_SIZE_LBA
+                    - GPT_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
         assert_eq!(gpt.last_lba, last_lba);
         assert_eq!(gpt.partitions.len(), 1);
 
@@ -734,23 +716,26 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(file_size).unwrap();
 
-        let first_lba = round_up(
-            MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let block_size_u64 = num_cast!(u64, BLOCK_SIZE);
 
-        let last_lba = round_down(
-            (TEMP_FILE_SIZE.to_usize().unwrap() / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let first_lba = num_cast!(
+            u64,
+            round_up(
+                MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
 
-        let block_size_u64 = BLOCK_SIZE.to_u64().unwrap();
+        let last_lba = num_cast!(
+            u64,
+            round_down(
+                (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
+                    - GPT_PARTITION_HEADER_SIZE_LBA
+                    - GPT_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
+
         GuidPartitionTableBuilder::new()
             .add_partition(
                 GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)
@@ -794,28 +779,31 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         temp_file.as_file().set_len(file_size).unwrap();
 
-        let first_lba = round_up(
-            MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let block_size_u64 = num_cast!(u64, BLOCK_SIZE);
 
-        let last_lba = round_down(
-            (TEMP_FILE_SIZE.to_usize().unwrap() / BLOCK_SIZE)
-                - GPT_PARTITION_HEADER_SIZE_LBA
-                - GPT_HEADER_SIZE_LBA,
-            GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
-        )
-        .to_u64()
-        .unwrap();
+        let first_lba = num_cast!(
+            u64,
+            round_up(
+                MBR_SIZE_LBA + GPT_HEADER_SIZE_LBA + GPT_PARTITION_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
+
+        let last_lba = num_cast!(
+            u64,
+            round_down(
+                (num_cast!(usize, TEMP_FILE_SIZE) / BLOCK_SIZE)
+                    - GPT_PARTITION_HEADER_SIZE_LBA
+                    - GPT_HEADER_SIZE_LBA,
+                GPT_PARTITION_ALIGNMENT / BLOCK_SIZE,
+            )
+        );
 
         let cutoff_lba = round_down(
             (last_lba - first_lba) / 2,
-            (GPT_PARTITION_ALIGNMENT / BLOCK_SIZE).to_u64().unwrap(),
+            num_cast!(u64, GPT_PARTITION_ALIGNMENT / BLOCK_SIZE),
         );
 
-        let block_size_u64 = BLOCK_SIZE.to_u64().unwrap();
         GuidPartitionTableBuilder::new()
             .add_partition(
                 GuidPartitionBuilder::new(EFI_SYSTEM_PART_GUID)

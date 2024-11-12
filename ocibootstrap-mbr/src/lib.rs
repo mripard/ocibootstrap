@@ -9,7 +9,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use num_traits::ToPrimitive;
-use part::div_round_up;
+use part::{div_round_up, num_cast};
 
 const LBA_SIZE: usize = 512;
 
@@ -86,17 +86,9 @@ impl MasterBootRecordPartitionTable {
         let hpc: u64 = self.builder.heads_per_cylinder.into();
         let spt: u64 = self.builder.sectors_per_track.into();
 
-        let c = (lba / (hpc * spt))
-            .to_u16()
-            .expect("Integer overflow (u64 to u16)");
-
-        let h = ((lba / spt) % hpc)
-            .to_u8()
-            .expect("Integer overflow (u64 to u8)");
-
-        let s = ((lba % spt) + 1)
-            .to_u8()
-            .expect("Integer overflow (u64 to u8)");
+        let c = num_cast!(u16, lba / (hpc * spt));
+        let h = num_cast!(u8, (lba / spt) % hpc);
+        let s = num_cast!(u8, (lba % spt) + 1);
 
         (c, h, s)
     }
@@ -104,8 +96,8 @@ impl MasterBootRecordPartitionTable {
     fn lba_to_chs_bytes(&self, lba: u64) -> [u8; 3] {
         let (c, h, s) = self.lba_to_chs(lba);
         if c > ((1 << 10) - 1) {
-            let c_lo = (c & 0xff) as u8;
-            let c_hi = ((c >> 8) & 0x3) as u8;
+            let c_lo = num_cast!(u8, c & 0xff);
+            let c_hi = num_cast!(u8, (c >> 8) & 0x3);
 
             [h, c_hi << 6 | s & 0x3f, c_lo]
         } else {
@@ -117,8 +109,7 @@ impl MasterBootRecordPartitionTable {
     fn build_table_layout(&self, file: &File) -> Result<MBRTableLayout, io::Error> {
         let metadata = file.metadata()?;
 
-        let block_size_u64 = LBA_SIZE.to_u64().expect("Integer Overflow (usize to u64)");
-
+        let block_size_u64 = num_cast!(u64, LBA_SIZE);
         let blocks = metadata.len() / block_size_u64;
 
         debug!(
@@ -127,16 +118,10 @@ impl MasterBootRecordPartitionTable {
             blocks
         );
 
-        let mbr_lba_offset_u32 = MBR_LBA_OFFSET
-            .to_u32()
-            .expect("Integer Overflow (usize to u32)");
-
+        let mbr_lba_offset_u32 = num_cast!(u32, MBR_LBA_OFFSET);
         debug!("Setting up MBR at LBA {mbr_lba_offset_u32}");
 
-        let mbr_lba_size_u32 = MBR_LBA_SIZE
-            .to_u32()
-            .expect("Integer Overflow (usize to u32)");
-
+        let mbr_lba_size_u32 = num_cast!(u32, MBR_LBA_SIZE);
         let first_usable_lba = u64::from(mbr_lba_offset_u32 + mbr_lba_size_u32);
         debug!("First Usable LBA: {first_usable_lba}");
 
