@@ -9,7 +9,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use num_traits::ToPrimitive;
-use part::{div_round_up, num_cast, start_end_to_size};
+use part::{div_round_up, num_cast, start_end_to_size, PartitionLayout};
 
 const LBA_SIZE: usize = 512;
 
@@ -71,7 +71,7 @@ impl MasterBootRecordPartitionBuilder {
 struct MBRTableLayout {
     block_size: usize,
     mbr_header_lba: usize,
-    partitions_offset: Vec<(usize, usize, usize)>,
+    partitions_offset: Vec<PartitionLayout>,
 }
 
 /// an MBR Partition Table Representation
@@ -183,9 +183,12 @@ impl MasterBootRecordPartitionTable {
                 let offset = next_lba;
                 next_lba += part_size;
 
-                (offset, part_size, next_lba - 1)
+                PartitionLayout {
+                    start_lba: offset,
+                    end_lba: next_lba - 1,
+                }
             })
-            .collect::<Vec<(usize, usize, usize)>>();
+            .collect::<Vec<PartitionLayout>>();
 
         Ok(MBRTableLayout {
             block_size: LBA_SIZE,
@@ -216,22 +219,28 @@ impl MasterBootRecordPartitionTable {
 
         mbr[440..444].copy_from_slice(&disk_id.to_le_bytes());
 
-        for (idx, (part, (first_lba, size, last_lba))) in
+        for (idx, (part, layout)) in
             zip(&self.builder.partitions, cfg.partitions_offset).enumerate()
         {
             let mut mbr_part = [0u8; MBR_PART_ENTRY_SIZE];
             mbr_part[0] = part.builder.bits;
 
-            let chs_bytes = self.lba_to_chs_bytes(first_lba);
+            let chs_bytes = self.lba_to_chs_bytes(layout.start_lba);
             mbr_part[1..4].copy_from_slice(&chs_bytes);
 
             mbr_part[4] = part.builder.type_;
 
-            let chs_bytes = self.lba_to_chs_bytes(last_lba);
+            let chs_bytes = self.lba_to_chs_bytes(layout.end_lba);
             mbr_part[5..8].copy_from_slice(&chs_bytes);
 
-            mbr_part[8..12].copy_from_slice(&first_lba.to_u32().unwrap_or(u32::MAX).to_le_bytes());
-            mbr_part[12..16].copy_from_slice(&size.to_u32().unwrap_or(u32::MAX).to_le_bytes());
+            mbr_part[8..12]
+                .copy_from_slice(&layout.start_lba.to_u32().unwrap_or(u32::MAX).to_le_bytes());
+            mbr_part[12..16].copy_from_slice(
+                &start_end_to_size(layout.start_lba, layout.end_lba)
+                    .to_u32()
+                    .unwrap_or(u32::MAX)
+                    .to_le_bytes(),
+            );
 
             let part_idx = MBR_PART_ENTRY_OFFSET + MBR_PART_ENTRY_SIZE * idx;
             mbr[part_idx..(part_idx + MBR_PART_ENTRY_SIZE)].copy_from_slice(&mbr_part);
