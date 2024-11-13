@@ -8,7 +8,7 @@ use std::{
 use bit_field::BitField;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use part::{num_cast, start_end_to_size, PartitionLayout};
+use part::{build_layout, num_cast, start_end_to_size, PartitionLayout, PartitionLayoutHint};
 use uuid::{uuid, Uuid};
 
 const BLOCK_SIZE: usize = 512;
@@ -120,63 +120,15 @@ impl GuidPartitionTable {
             ));
         }
 
-        let mut available_blocks = start_end_to_size(first_usable_lba, last_usable_lba);
-        debug!("Available LBAs: {available_blocks}");
-
-        let mut found_no_size = false;
-        let part_sizes_lba = self
+        let parts_hints = self
             .builder
             .partitions
             .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                Ok(if let Some(size_lba) = p.builder.size_lba {
-                    debug!("Partition {idx}: Size {size_lba} LBAs");
-
-                    if size_lba > available_blocks {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "No space left on the device",
-                        ));
-                    }
-
-                    available_blocks -= size_lba;
-                    debug!("Available LBAs {available_blocks}");
-
-                    Some(size_lba)
-                } else {
-                    if found_no_size {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Multiple Partitions with no size",
-                        ));
-                    }
-
-                    found_no_size = true;
-                    None
-                })
+            .map(|p| PartitionLayoutHint {
+                offset_lba: None,
+                size_lba: p.builder.size_lba,
             })
-            .collect::<Result<Vec<Option<usize>>, io::Error>>()?;
-
-        let mut next_lba = first_usable_lba;
-        let parts = part_sizes_lba
-            .iter()
-            .map(|o| {
-                let size_lba = if let Some(size_lba) = o {
-                    *size_lba
-                } else {
-                    available_blocks
-                };
-
-                let offset = next_lba;
-                next_lba += size_lba;
-
-                PartitionLayout {
-                    start_lba: offset,
-                    end_lba: next_lba - 1,
-                }
-            })
-            .collect::<Vec<PartitionLayout>>();
+            .collect::<Vec<_>>();
 
         Ok(GuidPartitionTableLayout {
             block_size: BLOCK_SIZE,
@@ -184,7 +136,7 @@ impl GuidPartitionTable {
             primary_gpt_header_lba: primary_gpt_lba,
             primary_gpt_table_lba: primary_gpt_parts_lba,
             first_usable: first_usable_lba,
-            partitions_offset: parts,
+            partitions_offset: build_layout(first_usable_lba, last_usable_lba, &parts_hints)?,
             last_usable: last_usable_lba,
             backup_gpt_table_lba: backup_gpt_parts_lba,
             backup_gpt_header_lba: backup_gpt_lba,
