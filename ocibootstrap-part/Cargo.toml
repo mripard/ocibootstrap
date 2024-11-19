@@ -1,0 +1,21 @@
+[package]
+name = "ocibootstrap-part"
+version = "0.1.0"
+authors = ["Maxime Ripard <mripard@kernel.org>"]
+description = "Partition Table Helpers Library"
+edition = "2021"
+readme = "./README.md"
+license-file = "../LICENSE"
+keywords = ["partition"]
+categories = ["filesystem"]
+repository = "https://github.com/mripard/ocibootstrap/"
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { version = "0.4.22", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
+
+[dev-dependencies]
+test-log = { version = "0.2.16", default-features = false, features = ["log"] }

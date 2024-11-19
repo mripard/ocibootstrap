@@ -112,55 +112,65 @@ impl Drop for LoopDevice {
 }
 
 #[derive(Debug)]
-struct MountPoint {
+struct DevicePartition {
+    fs: Filesystem,
     dev: PathBuf,
-    host_mnt: Mount,
+    host_mnt: Option<Mount>,
 }
 
-impl MountPoint {
-    fn new(dev: &Path, mnt: &Path) -> Result<Self, io::Error> {
-        debug!("Mounting {} on {}", dev.display(), mnt.display());
+impl DevicePartition {
+    fn new(dev: &Path, fs: Filesystem, mnt: Option<&Path>) -> Result<Self, io::Error> {
+        let mount = if let Some(mnt) = mnt {
+            debug!("Mounting {} on {}", dev.display(), mnt.display());
 
-        fs::create_dir_all(mnt)?;
+            fs::create_dir_all(mnt)?;
 
-        let mount = Mount::builder()
-            .fstype(FilesystemType::Set(&["ext4", "vfat"]))
-            .mount(dev, mnt)?;
+            let mount = Mount::builder()
+                .fstype(FilesystemType::Set(&["ext4", "vfat"]))
+                .mount(dev, mnt)?;
 
-        trace!("Mount Successful");
+            trace!("Mount Successful");
+            Some(mount)
+        } else {
+            None
+        };
 
         Ok(Self {
             dev: dev.to_path_buf(),
+            fs,
             host_mnt: mount,
         })
     }
 }
 
-impl Drop for MountPoint {
+impl Drop for DevicePartition {
     fn drop(&mut self) {
-        debug!(
-            "Unmounting {} from {}",
-            self.dev.display(),
-            self.host_mnt.target_path().display()
-        );
+        if let Some(mnt) = &self.host_mnt {
+            debug!(
+                "Unmounting {} from {}",
+                self.dev.display(),
+                mnt.target_path().display()
+            );
 
-        let res = self.host_mnt.unmount(UnmountFlags::DETACH);
-        if let Err(e) = res {
-            error!("Couldn't unmount {}: {e}", self.dev.display());
+            let res = mnt.unmount(UnmountFlags::DETACH);
+            if let Err(e) = res {
+                error!("Couldn't unmount {}: {e}", self.dev.display());
+            }
         }
     }
 }
 
 #[derive(Debug)]
-struct MountPoints {
-    mnts: Vec<MountPoint>,
+struct Device {
+    parts: Vec<DevicePartition>,
+
     dir: TempDir,
     _loopdev: LoopDevice,
 }
 
-impl Drop for MountPoints {
+impl Drop for Device {
     fn drop(&mut self) {
-        while let Some(item) = self.mnts.pop() {
+        while let Some(item) = self.parts.pop() {
             drop(item);
         }
     }
@@ -268,7 +278,7 @@ fn join_path(root: &Path, path: &Path) -> Result<PathBuf, io::Error> {
 fn create_gpt(
     table: &GptPartitionTable,
     file: &mut File,
-) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = GuidPartitionTableBuilder::new();
     for partition in table.partitions() {
         let mut part_builder = GuidPartitionBuilder::new(partition.uuid);
@@ -277,8 +287,12 @@ fn create_gpt(
             part_builder = part_builder.name(name);
         }
 
-        if let Some(size) = partition.size {
-            part_builder = part_builder.size(size);
+        if let Some(offset_lba) = partition.offset_lba {
+            part_builder = part_builder.offset(offset_lba);
+        }
+
+        if let Some(size_bytes) = partition.size_bytes {
+            part_builder = part_builder.size(size_bytes);
         }
 
         let part = part_builder
@@ -296,20 +310,24 @@ fn create_gpt(
     Ok(table
         .partitions()
         .iter()
-        .map(|p| (p.fs, p.mnt.clone()))
+        .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
 }
 
 fn create_mbr(
     table: &MbrPartitionTable,
     file: &mut File,
-) -> Result<Vec<(Filesystem, PathBuf)>, OciBootstrapError> {
+) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = MasterBootRecordPartitionTableBuilder::new();
     for partition in table.partitions() {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
 
-        if let Some(size) = partition.size {
-            part_builder = part_builder.size(size);
+        if let Some(offset_lba) = partition.offset_lba {
+            part_builder = part_builder.offset(offset_lba);
+        }
+
+        if let Some(size_bytes) = partition.size_bytes {
+            part_builder = part_builder.size(size_bytes);
         }
 
         let part = part_builder.bootable(partition.bootable).build();
@@ -324,17 +342,17 @@ fn create_mbr(
     Ok(table
         .partitions()
         .iter()
-        .map(|p| (p.fs, p.mnt.clone()))
+        .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
 }
 
 fn create_and_mount_loop_device(
     mut file: File,
-    partition_table: PartitionTable,
-) -> Result<MountPoints, OciBootstrapError> {
+    partition_table: &PartitionTable,
+) -> Result<Device, OciBootstrapError> {
     let partitions = match partition_table {
-        PartitionTable::Gpt(table) => create_gpt(&table, &mut file)?,
-        PartitionTable::Mbr(table) => create_mbr(&table, &mut file)?,
+        PartitionTable::Gpt(table) => create_gpt(table, &mut file)?,
+        PartitionTable::Mbr(table) => create_mbr(table, &mut file)?,
     };
 
     let loop_control = LoopControl::open()?;
@@ -344,10 +362,10 @@ fn create_and_mount_loop_device(
     let output_dir = temp_dir.path().to_path_buf();
     debug!("Temp output dir is {}", output_dir.display());
 
-    let mut mount_points = find_device_parts(&loop_device.path())?
+    let mut device_partitions = find_device_parts(&loop_device.path())?
         .into_iter()
         .enumerate()
-        .map(|(idx, part)| {
+        .map(|(idx, device_part)| {
             let part_desc = &partitions[idx];
 
             match part_desc.0 {
@@ -355,7 +373,7 @@ fn create_and_mount_loop_device(
                     let mut command = Command::new("mkfs.vfat");
                     let mut command_ref = &mut command;
 
-                    debug!("Creating FAT32 partition on {}", part.display());
+                    debug!("Creating FAT32 partition on {}", device_part.display());
 
                     if let (Some(heads), Some(spt)) = (p.heads, p.sectors_per_track) {
                         let geometry = format!("{heads}/{spt}");
@@ -373,7 +391,7 @@ fn create_and_mount_loop_device(
                         command_ref = command_ref.args(["-i", &id]);
                     }
 
-                    let output = command_ref.arg(part.as_os_str()).output()?;
+                    let output = command_ref.arg(device_part.as_os_str()).output()?;
                     if !output.status.success() {
                         unimplemented!();
                     }
@@ -382,7 +400,7 @@ fn create_and_mount_loop_device(
                     let mut command = Command::new("mkfs.ext4");
                     let mut command_ref = &mut command;
 
-                    debug!("Creating EXT4 partition on {}", part.display());
+                    debug!("Creating EXT4 partition on {}", device_part.display());
 
                     if let Some(uuid) = p.uuid {
                         let uuid = uuid.to_string();
@@ -392,39 +410,50 @@ fn create_and_mount_loop_device(
                         command_ref = command_ref.args(["-U", &uuid]);
                     }
 
-                    let output = command_ref.arg(part.as_os_str()).output()?;
+                    let output = command_ref.arg(device_part.as_os_str()).output()?;
 
                     if !output.status.success() {
                         unimplemented!();
                     }
                 }
+                Filesystem::Raw(_) => {
+                    debug!("Raw Partition, Skipping.");
+                }
             };
 
             let mount_point = part_desc.1.clone();
-            debug!(
-                "Partition {} Mounted on {}",
-                part.display(),
-                mount_point.display()
-            );
 
-            Ok((part, mount_point))
+            if let Some(mnt) = &mount_point {
+                debug!(
+                    "Partition {} Mounted on {}",
+                    device_part.display(),
+                    mnt.display()
+                );
+            }
+
+            Ok((device_part, part_desc.0.clone(), mount_point))
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    mount_points.sort_by(|a, b| Ord::cmp(&a.1, &b.1));
+    device_partitions.sort_by(|a, b| Ord::cmp(&a.2, &b.2));
 
-    let mounts = mount_points
+    let device_partitions = device_partitions
         .into_iter()
-        .map(|(part, target_mnt)| {
-            let mount_dir = join_path(&output_dir, &target_mnt)?;
-            MountPoint::new(&part, &mount_dir)
+        .map(|(part, fs, target_mnt)| {
+            if let Some(mnt) = &target_mnt {
+                let mount_dir = join_path(&output_dir, mnt)?;
+
+                DevicePartition::new(&part, fs, Some(&mount_dir))
+            } else {
+                DevicePartition::new(&part, fs, None)
+            }
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    Ok(MountPoints {
+    Ok(Device {
         _loopdev: loop_device,
         dir: temp_dir,
-        mnts: mounts,
+        parts: device_partitions,
     })
 }
 
@@ -498,10 +527,40 @@ fn main() -> Result<(), anyhow::Error> {
                 .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(&output)?;
-            let mounts = create_and_mount_loop_device(file, manifest.configuration().try_into()?)?;
-            write_manifest_to_dir(&manifest, mounts.dir.path())?;
+            let partition_table = manifest.configuration().try_into()?;
+            let device = create_and_mount_loop_device(file, &partition_table)?;
+            write_manifest_to_dir(&manifest, device.dir.path())?;
 
-            drop(mounts);
+            for part in &device.parts {
+                if let Filesystem::Raw(p) = &part.fs {
+                    let source = join_path(device.dir.path(), &p.content)?;
+
+                    if !source.exists() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            format!(
+                                "Raw Partition Source File {} Not Found",
+                                p.content.display()
+                            ),
+                        )
+                        .into());
+                    }
+
+                    let mut source = io::BufReader::new(File::open(&source)?);
+                    let mut dest = io::BufWriter::new(File::options().write(true).open(&part.dev)?);
+
+                    debug!(
+                        "Writing content of file {} to {}",
+                        p.content.display(),
+                        part.dev.display()
+                    );
+
+                    io::copy(&mut source, &mut dest)?;
+                }
+            }
+
+            drop(device);
+
             Ok(())
         }
         CliSubcommand::Directory { output, container } => {
