@@ -16,42 +16,35 @@ workspace = true
 [build-dependencies]
 
 [dependencies]
-anyhow = { version = "1.0.87", default-features = false, features = [
-    "backtrace",
-    "std",
-] }
-base64 = { version = "0.22.1", default-features = false }
-clap = { version = "4.5.17", default-features = false, features = [
-    "derive",
-    "help",
-    "std",
-] }
+anyhow = { workspace = true, features = ["backtrace", "std"] }
+base64 = { workspace = true }
+clap = { workspace = true, features = ["help"] }
 env_logger = { version = "0.11.5", default-features = false }
-log = { version = "0.4.22", default-features = false }
+log = { workspace = true }
 loopdev = { package = "loopdev-3", version = "0.5.1", default-features = false }
-gpt = { package = "ocibootstrap-gpt", path = "../ocibootstrap-gpt" }
+gpt = { workspace = true }
 jiff = { version = "0.1.13", default-features = false, features = [
     "logging",
     "serde",
     "std",
     "tz-system",
 ] }
-mbr = { package = "ocibootstrap-mbr", path = "../ocibootstrap-mbr" }
+mbr = { workspace = true }
 nix = { version = "0.29.0", default-features = false, features = ["user"] }
-num-traits = { version = "0.2.19", default-features = false }
+num-traits = { workspace = true }
+oci-spec = { workspace = true }
 once_cell = { version = "1.19.0", default-features = false }
 psl = { version = "2.1.55", default-features = false, features = ["helpers"] }
-serde = { version = "1.0.210", default-features = false, features = ["derive"] }
-serde_json = { version = "1.0.128", default-features = false }
-tar_split = { package = "ocibootstrap-tar-split", path = "../ocibootstrap-tar-split" }
-toml = { version = "0.8.19", default-features = false, features = ["parse"] }
-types = { package = "ocibootstrap-types", path = "../ocibootstrap-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 sys-mount = { version = "3.0.1", default-features = false }
+tar = { workspace = true }
+tar_split = { workspace = true }
 temp-dir = { version = "0.1.13", default-features = false }
+toml = { workspace = true, features = ["parse"] }
+types = { workspace = true }
+uuid = { workspace = true }
 xdg = { version = "2.5.2", default-features = false }
-tar = { version = "0.4.41", default-features = false, features = ["xattr"] }
-oci-spec = { version = "0.6.8", default-features = false, features = ["image"] }
-uuid = { version = "1.10.0", default-features = false }
 
 [dev-dependencies]
-test-log = { version = "0.2.16", default-features = false, features = ["log"] }
+test-log = { workspace = true }

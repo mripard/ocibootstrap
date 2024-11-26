@@ -9,6 +9,32 @@ members = [
     "ocibootstrap-types",
 ]
 
+[workspace.dependencies]
+anyhow = { version = "1.0.87", default-features = false }
+base64 = { version = "0.22.1", default-features = false }
+bit_field = { version = "0.10.2", default-features = false }
+clap = { version = "4.5.17", default-features = false, features = [
+    "derive",
+    "std",
+] }
+gpt = { package = "ocibootstrap-gpt", path = "./ocibootstrap-gpt" }
+log = { version = "0.4.22", default-features = false }
+mbr = { package = "ocibootstrap-mbr", path = "./ocibootstrap-mbr" }
+num-traits = { version = "0.2.19", default-features = false }
+oci-spec = { version = "0.6.8", default-features = false, features = ["image"] }
+part = { package = "ocibootstrap-part", path = "./ocibootstrap-part" }
+serde = { version = "1.0.210", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.128", default-features = false, features = [
+    "std",
+] }
+tar = { version = "0.4.41", default-features = false, features = ["xattr"] }
+tar_split = { package = "ocibootstrap-tar-split", path = "./ocibootstrap-tar-split" }
+tempfile = { version = "3.12.0", default-features = false }
+test-log = { version = "0.2.16", default-features = false, features = ["log"] }
+toml = { version = "0.8.19", default-features = false }
+types = { package = "ocibootstrap-types", path = "./ocibootstrap-types" }
+uuid = { version = "1.10.0", default-features = false }
+
 [workspace.lints.rust]
 # Groups
 future_incompatible = { level = "warn", priority = -1 }
