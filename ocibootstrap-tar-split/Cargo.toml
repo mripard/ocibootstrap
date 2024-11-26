@@ -15,7 +15,7 @@ workspace = true
 
 [dependencies]
 base64 = { workspace = true, features = ["alloc"] }
-crc = { version = "3.2.1", default-features = false }
+crc = { workspace = true }
 flate2 = { version = "1.0.33", default-features = false, features = [
     "rust_backend",
 ] }

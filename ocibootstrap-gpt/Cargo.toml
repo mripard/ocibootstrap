@@ -15,7 +15,7 @@ workspace = true
 
 [dependencies]
 bit_field = { workspace = true }
-crc32fast = { version = "1.4.2", default-features = false }
+crc = { workspace = true }
 log = { workspace = true }
 mbr = { workspace = true }
 part = { workspace = true }

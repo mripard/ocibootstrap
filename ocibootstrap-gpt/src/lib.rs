@@ -210,7 +210,8 @@ impl GuidPartitionTable {
         let gpt_part_entries_size = GPT_PARTITION_NUM * GPT_PARTITION_ENTRY_SIZE;
         parts.resize(gpt_part_entries_size, 0);
 
-        let parts_crc = crc32fast::hash(&parts);
+        let crc_alg = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+        let parts_crc = crc_alg.checksum(&parts);
         primary_gpt[88..92].copy_from_slice(&parts_crc.to_le_bytes());
 
         let mut backup_gpt = primary_gpt;
@@ -218,10 +219,10 @@ impl GuidPartitionTable {
         backup_gpt[32..40].copy_from_slice(&cfg.primary_gpt_header_lba.to_le_bytes());
         backup_gpt[72..80].copy_from_slice(&cfg.backup_gpt_table_lba.to_le_bytes());
 
-        let primary_gpt_crc = crc32fast::hash(&primary_gpt);
+        let primary_gpt_crc = crc_alg.checksum(&primary_gpt);
         primary_gpt[16..20].copy_from_slice(&primary_gpt_crc.to_le_bytes());
 
-        let backup_gpt_crc = crc32fast::hash(&backup_gpt);
+        let backup_gpt_crc = crc_alg.checksum(&backup_gpt);
         backup_gpt[16..20].copy_from_slice(&backup_gpt_crc.to_le_bytes());
 
         file.seek(io::SeekFrom::Start(num_cast!(
