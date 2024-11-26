@@ -20,7 +20,7 @@ use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilde
 use serde::Deserialize;
 use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
 use tar::Archive;
-use temp_dir::TempDir;
+use tempfile::TempDir;
 use types::{Architecture, OciBootstrapError, OperatingSystem};
 
 mod config;
@@ -606,7 +606,7 @@ mod chroot_test {
         path::PathBuf,
     };
 
-    use temp_dir::TempDir;
+    use tempfile::TempDir;
     use test_log::test;
 
     use crate::join_path;
