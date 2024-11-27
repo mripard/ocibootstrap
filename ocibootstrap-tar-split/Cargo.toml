@@ -23,3 +23,9 @@ infer = { version = "0.16.0", default-features = false, features = ["std"] }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+sha256 = { version = "1.5.0", default-features = false }
+tar = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
