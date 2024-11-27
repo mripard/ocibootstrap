@@ -2,7 +2,7 @@
 
 use core::fmt;
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs::File,
     io::{self, BufReader},
     os::unix::ffi::OsStringExt,
@@ -51,10 +51,31 @@ where
     Ok(Some(val))
 }
 
+fn decode_name<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Ok(Value::deserialize(deserializer)?.as_str().map(Into::into))
+}
+
+fn decode_name_raw<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Ok(Value::deserialize(deserializer)?
+        .as_str()
+        .map(|s| base64::engine::general_purpose::STANDARD.decode(s))
+        .transpose()
+        .map_err(de::Error::custom)?
+        .map(OsString::from_vec))
+}
+
 #[derive(Debug, Deserialize)]
 struct FileEntry {
-    name: Option<String>,
-    name_raw: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "decode_name")]
+    name: Option<OsString>,
+    #[serde(default, deserialize_with = "decode_name_raw")]
+    name_raw: Option<OsString>,
     size: Option<u64>,
     #[serde(deserialize_with = "u64_base64_decode", rename = "payload")]
     checksum: Option<u64>,
@@ -63,8 +84,10 @@ struct FileEntry {
 
 #[derive(Debug, Deserialize)]
 struct SegmentEntry {
-    name: Option<String>,
-    name_raw: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "decode_name")]
+    name: Option<OsString>,
+    #[serde(default, deserialize_with = "decode_name_raw")]
+    name_raw: Option<OsString>,
     #[serde(deserialize_with = "base64_decode")]
     payload: Vec<u8>,
     position: usize,
@@ -78,26 +101,26 @@ enum Entry {
 
 impl Entry {
     #[must_use]
-    fn name(&self) -> OsString {
+    fn name(&self) -> &OsStr {
         match self {
             Entry::File(f) => {
                 if let Some(name) = &f.name {
-                    return OsString::from(name);
+                    return name;
                 }
 
                 if let Some(raw) = &f.name_raw {
-                    return OsString::from_vec(raw.clone());
+                    return raw;
                 }
 
                 unreachable!()
             }
             Entry::Segment(s) => {
                 if let Some(name) = &s.name {
-                    return OsString::from(name);
+                    return name;
                 }
 
                 if let Some(raw) = &s.name_raw {
-                    return OsString::from_vec(raw.clone());
+                    return raw;
                 }
 
                 unreachable!()
