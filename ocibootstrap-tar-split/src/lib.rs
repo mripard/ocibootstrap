@@ -84,10 +84,6 @@ struct FileEntry {
 
 #[derive(Debug, Deserialize)]
 struct SegmentEntry {
-    #[serde(default, deserialize_with = "decode_name")]
-    name: Option<OsString>,
-    #[serde(default, deserialize_with = "decode_name_raw")]
-    name_raw: Option<OsString>,
     #[serde(deserialize_with = "base64_decode")]
     payload: Vec<u8>,
     position: usize,
@@ -114,15 +110,7 @@ impl Entry {
 
                 unreachable!()
             }
-            Entry::Segment(s) => {
-                if let Some(name) = &s.name {
-                    return name;
-                }
-
-                if let Some(raw) = &s.name_raw {
-                    return raw;
-                }
-
+            Entry::Segment(_) => {
                 unreachable!()
             }
         }
