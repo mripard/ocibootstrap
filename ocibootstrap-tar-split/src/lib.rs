@@ -51,35 +51,74 @@ where
     Ok(Some(val))
 }
 
-fn decode_name<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    Ok(Value::deserialize(deserializer)?.as_str().map(Into::into))
-}
-
-fn decode_name_raw<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    Ok(Value::deserialize(deserializer)?
-        .as_str()
-        .map(|s| base64::engine::general_purpose::STANDARD.decode(s))
-        .transpose()
-        .map_err(de::Error::custom)?
-        .map(OsString::from_vec))
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct FileEntry {
-    #[serde(default, deserialize_with = "decode_name")]
-    name: Option<OsString>,
-    #[serde(default, deserialize_with = "decode_name_raw")]
-    name_raw: Option<OsString>,
+    name: OsString,
     size: Option<u64>,
-    #[serde(deserialize_with = "u64_base64_decode", rename = "payload")]
     checksum: Option<u64>,
     position: usize,
+}
+
+impl<'de> Deserialize<'de> for FileEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let mut value = Value::deserialize(deserializer)?;
+        let map = value
+            .as_object_mut()
+            .ok_or(de::Error::invalid_type(de::Unexpected::Seq, &"a map"))?;
+
+        let name = if let Some(val) = map.get("name") {
+            val.as_str()
+                .ok_or(de::Error::invalid_type(
+                    de::Unexpected::Other("something other than a string"),
+                    &"a string",
+                ))?
+                .into()
+        } else if let Some(val) = map.get("name_raw") {
+            let bytes = base64_decode(val).map_err(de::Error::custom)?;
+
+            OsString::from_vec(bytes)
+        } else {
+            return Err(de::Error::missing_field("name or name_raw"));
+        };
+
+        let size = map
+            .get("size")
+            .map(|v| {
+                v.as_u64().ok_or(de::Error::invalid_type(
+                    de::Unexpected::Other("something other than a u64"),
+                    &"a u64",
+                ))
+            })
+            .transpose()?;
+
+        let checksum = map
+            .get("payload")
+            .map(u64_base64_decode)
+            .transpose()
+            .map_err(|_err| de::Error::custom("Couldn't decode payload array"))?
+            .flatten();
+
+        let position = map
+            .get("position")
+            .ok_or(de::Error::missing_field("position"))?
+            .as_u64()
+            .ok_or(de::Error::invalid_type(
+                de::Unexpected::Other("something other than a u64"),
+                &"a u64",
+            ))?
+            .try_into()
+            .map_err(|_err| de::Error::custom("Couldn't decode u64"))?;
+
+        Ok(Self {
+            name,
+            size,
+            checksum,
+            position,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,17 +138,7 @@ impl Entry {
     #[must_use]
     fn name(&self) -> &OsStr {
         match self {
-            Entry::File(f) => {
-                if let Some(name) = &f.name {
-                    return name;
-                }
-
-                if let Some(raw) = &f.name_raw {
-                    return raw;
-                }
-
-                unreachable!()
-            }
+            Entry::File(f) => &f.name,
             Entry::Segment(_) => {
                 unreachable!()
             }
