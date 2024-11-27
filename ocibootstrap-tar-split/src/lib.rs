@@ -2,7 +2,7 @@
 
 use core::fmt;
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs::File,
     io::{self, BufReader},
     os::unix::ffi::OsStringExt,
@@ -132,18 +132,6 @@ struct SegmentEntry {
 enum Entry {
     File(FileEntry),
     Segment(SegmentEntry),
-}
-
-impl Entry {
-    #[must_use]
-    fn name(&self) -> &OsStr {
-        match self {
-            Entry::File(f) => &f.name,
-            Entry::Segment(_) => {
-                unreachable!()
-            }
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for Entry {
@@ -321,10 +309,10 @@ where
                         debug!(
                             "Position {}: File Entry {}, size {len} bytes",
                             f.position,
-                            entry.name().to_string_lossy()
+                            f.name.to_string_lossy()
                         );
 
-                        let path = self.base.join(entry.name());
+                        let path = self.base.join(&f.name);
                         debug!("Opening File {}", path.display());
 
                         let mut file = File::open(&path)?;
@@ -378,7 +366,7 @@ where
 
                     debug!(
                         "Found File Entry {} with no size. Skipping.",
-                        entry.name().to_string_lossy()
+                        f.name.to_string_lossy()
                     );
                     continue;
                 }
