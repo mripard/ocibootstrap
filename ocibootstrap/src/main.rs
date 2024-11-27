@@ -476,6 +476,24 @@ fn write_manifest_to_dir(
 
             let entry_path = entry.path().expect("This call can only fail on Windows.");
 
+            if let Some(file_name) = entry_path.file_name() {
+                if let Some(file_name_str) = file_name.to_str() {
+                    if let Some(remove_file_name) = file_name_str.strip_prefix(".wh.") {
+                        let dir = entry_path.parent().unwrap_or(Path::new("/"));
+                        let remove_path = dir.join(remove_file_name);
+
+                        debug!(
+                            "File {} is a whiteout file. Removing {}",
+                            entry_path.display(),
+                            remove_path.display()
+                        );
+
+                        fs::remove_file(&remove_path)?;
+                        continue;
+                    }
+                }
+            }
+
             debug!("Extracting File {}", entry_path.display(),);
 
             entry.set_preserve_mtime(true);
