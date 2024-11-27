@@ -470,13 +470,20 @@ fn write_manifest_to_dir(
         debug!("Got the archive. Extracting...");
 
         let mut archive = Archive::new(reader);
-        archive.set_overwrite(true);
-        archive.set_preserve_mtime(true);
-        archive.set_preserve_ownerships(true);
-        archive.set_preserve_permissions(true);
-        archive.set_unpack_xattrs(true);
 
-        archive.unpack(dir)?;
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+
+            let entry_path = entry.path().expect("This call can only fail on Windows.");
+
+            debug!("Extracting File {}", entry_path.display(),);
+
+            entry.set_preserve_mtime(true);
+            entry.set_preserve_permissions(true);
+            entry.set_unpack_xattrs(true);
+
+            entry.unpack_in(dir)?;
+        }
 
         info!("Done");
     }
