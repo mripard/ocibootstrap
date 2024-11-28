@@ -17,8 +17,8 @@ const LBA_SIZE: usize = 512;
 
 const MBR_LBA_OFFSET: usize = 0;
 const MBR_LBA_SIZE: usize = 1;
-const MBR_PART_ENTRY_OFFSET: usize = 446;
-const MBR_PART_ENTRY_SIZE: usize = 16;
+const MBR_PART_ENTRY_OFFSET_BYTES: usize = 446;
+const MBR_PART_ENTRY_SIZE_BYTES: usize = 16;
 
 /// An MBR Partition Entry
 #[derive(Debug)]
@@ -189,7 +189,7 @@ impl MasterBootRecordPartitionTable {
         for (idx, (part, layout)) in
             zip(&self.builder.partitions, cfg.partitions_offset).enumerate()
         {
-            let mut mbr_part = [0u8; MBR_PART_ENTRY_SIZE];
+            let mut mbr_part = [0u8; MBR_PART_ENTRY_SIZE_BYTES];
             mbr_part[0] = part.builder.bits;
 
             let chs_bytes = self.lba_to_chs_bytes(layout.start_lba);
@@ -209,8 +209,8 @@ impl MasterBootRecordPartitionTable {
                     .to_le_bytes(),
             );
 
-            let part_idx = MBR_PART_ENTRY_OFFSET + MBR_PART_ENTRY_SIZE * idx;
-            mbr[part_idx..(part_idx + MBR_PART_ENTRY_SIZE)].copy_from_slice(&mbr_part);
+            let part_idx = MBR_PART_ENTRY_OFFSET_BYTES + MBR_PART_ENTRY_SIZE_BYTES * idx;
+            mbr[part_idx..(part_idx + MBR_PART_ENTRY_SIZE_BYTES)].copy_from_slice(&mbr_part);
         }
 
         mbr[510] = 0x55;
