@@ -479,22 +479,24 @@ fn write_manifest_to_dir(
             if let Some(file_name) = entry_path.file_name() {
                 if let Some(file_name_str) = file_name.to_str() {
                     if let Some(remove_file_name) = file_name_str.strip_prefix(".wh.") {
-                        let dir = entry_path.parent().unwrap_or(Path::new("/"));
-                        let remove_path = dir.join(remove_file_name);
+                        let parent_dir = entry_path.parent().unwrap_or(Path::new("/"));
+                        let remove_path = parent_dir.join(remove_file_name);
+                        let actual_file = dir.join(&remove_path);
 
                         debug!(
-                            "File {} is a whiteout file. Removing {}",
+                            "File {} is a whiteout file. Removing {} ({})",
                             entry_path.display(),
-                            remove_path.display()
+                            remove_path.display(),
+                            actual_file.display()
                         );
 
-                        fs::remove_file(&remove_path)?;
+                        fs::remove_file(&actual_file)?;
                         continue;
                     }
                 }
             }
 
-            debug!("Extracting File {}", entry_path.display(),);
+            debug!("Extracting File {}", entry_path.display());
 
             entry.set_preserve_mtime(true);
             entry.set_preserve_permissions(true);
