@@ -203,7 +203,7 @@ impl PartitionTable {
     ) -> Result<GptPartitionTable, OciBootstrapError> {
         let part_names: Vec<String> = serde_json::from_str(
             labels
-                .get("com.github.mripard.ocibootstrap.partitions")
+                .get("com.github.mripard.ocibootstrap.table.partitions")
                 .ok_or(OciBootstrapError::Custom(
                     "Missing partitions list".to_owned(),
                 ))?,
@@ -315,7 +315,7 @@ impl PartitionTable {
     ) -> Result<MbrPartitionTable, OciBootstrapError> {
         let part_names: Vec<String> = serde_json::from_str(
             labels
-                .get("com.github.mripard.ocibootstrap.partitions")
+                .get("com.github.mripard.ocibootstrap.table.partitions")
                 .ok_or(OciBootstrapError::Custom(
                     "Missing partitions list".to_owned(),
                 ))?,
@@ -424,7 +424,7 @@ impl TryFrom<&ImageConfiguration> for PartitionTable {
         ))?;
 
         let layout_type = labels
-            .get("com.github.mripard.ocibootstrap.partitions_layout")
+            .get("com.github.mripard.ocibootstrap.table.type")
             .ok_or(OciBootstrapError::Custom(
                 "Missing partition layout".to_owned(),
             ))?;
