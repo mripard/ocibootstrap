@@ -3,13 +3,13 @@
 
 use std::{
     fs::{self, File},
-    io::{self, Write},
-    os::fd::AsFd,
+    io::{self, Write as _},
+    os::fd::AsFd as _,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use anyhow::{bail, Context};
+use anyhow::{bail, Context as _};
 use clap::{Parser, Subcommand};
 use gpt::{GuidPartitionBuilder, GuidPartitionTableBuilder};
 use layout::{Filesystem, GptPartitionTable, MbrPartitionTable, PartitionTable};
@@ -18,7 +18,7 @@ use log::{debug, error, info, log_enabled, trace, Level};
 use loopdev::LoopControl;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use serde::Deserialize;
-use sys_mount::{FilesystemType, Mount, Unmount, UnmountFlags};
+use sys_mount::{FilesystemType, Mount, Unmount as _, UnmountFlags};
 use tar::Archive;
 use tempfile::TempDir;
 use types::{Architecture, OciBootstrapError, OperatingSystem};

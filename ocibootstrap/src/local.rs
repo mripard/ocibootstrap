@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use base64::Engine;
+use base64::Engine as _;
 use jiff::Timestamp;
 use log::{debug, trace};
 use nix::unistd::Uid;

@@ -1,4 +1,4 @@
-use core::{fmt, str::FromStr};
+use core::{fmt, str::FromStr as _};
 use std::{collections::HashMap, path::PathBuf};
 
 use log::debug;

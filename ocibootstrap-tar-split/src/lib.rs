@@ -5,11 +5,11 @@ use std::{
     ffi::OsString,
     fs::File,
     io::{self, BufReader},
-    os::unix::ffi::OsStringExt,
+    os::unix::ffi::OsStringExt as _,
     path::{Path, PathBuf},
 };
 
-use base64::Engine;
+use base64::Engine as _;
 use crc::{Crc, Digest as CrcDigest, CRC_64_GO_ISO};
 use flate2::bufread::GzDecoder;
 use log::debug;

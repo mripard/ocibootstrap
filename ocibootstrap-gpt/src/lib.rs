@@ -2,10 +2,10 @@
 
 use std::{
     fs::File,
-    io::{self, Seek, Write},
+    io::{self, Seek as _, Write as _},
 };
 
-use bit_field::BitField;
+use bit_field::BitField as _;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use part::{build_layout, num_cast, start_end_to_size, PartitionLayout, PartitionLayoutHint};
