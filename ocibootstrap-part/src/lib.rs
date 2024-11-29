@@ -292,7 +292,7 @@ pub fn build_layout(
         next_available_lba = offset + size;
     }
 
-    return Ok(array
+    Ok(array
         .iter()
         .map(|o| {
             let (offset, size) = o
@@ -303,5 +303,5 @@ pub fn build_layout(
                 end_lba: start_size_to_end(offset, size),
             }
         })
-        .collect());
+        .collect())
 }
