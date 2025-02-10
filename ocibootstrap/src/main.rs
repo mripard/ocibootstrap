@@ -18,6 +18,7 @@ use log::{Level, debug, error, info, log_enabled, trace};
 use loopdev::LoopControl;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use serde::Deserialize;
+use serde_json::Value;
 use sys_mount::{FilesystemType, Mount, Unmount as _, UnmountFlags};
 use tar::Archive;
 use tempfile::TempDir;
@@ -25,7 +26,6 @@ use types::{Architecture, OciBootstrapError, OperatingSystem};
 
 mod config;
 mod container;
-mod layout;
 mod local;
 
 use crate::container::ContainerSpec;
@@ -280,7 +280,7 @@ fn create_gpt(
     file: &mut File,
 ) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = GuidPartitionTableBuilder::new();
-    for partition in table.partitions() {
+    for partition in &table.partitions {
         let mut part_builder = GuidPartitionBuilder::new(partition.uuid);
 
         if let Some(name) = &partition.name {
@@ -293,6 +293,10 @@ fn create_gpt(
 
         if let Some(size_bytes) = partition.size_bytes {
             part_builder = part_builder.size(size_bytes);
+        }
+
+        for attr in &partition.attributes {
+            part_builder = part_builder.set_flag(*attr);
         }
 
         let part = part_builder
@@ -308,7 +312,7 @@ fn create_gpt(
     file.sync_all()?;
 
     Ok(table
-        .partitions()
+        .partitions
         .iter()
         .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
@@ -319,7 +323,7 @@ fn create_mbr(
     file: &mut File,
 ) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = MasterBootRecordPartitionTableBuilder::new();
-    for partition in table.partitions() {
+    for partition in &table.partitions {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
 
         if let Some(offset_lba) = partition.offset_lba {
@@ -340,7 +344,7 @@ fn create_mbr(
     file.sync_all()?;
 
     Ok(table
-        .partitions()
+        .partitions
         .iter()
         .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
@@ -419,6 +423,7 @@ fn create_and_mount_loop_device(
                 Filesystem::Raw(_) => {
                     debug!("Raw Partition, Skipping.");
                 }
+                Filesystem::Lvm(_) | Filesystem::Swap | Filesystem::Xfs => unimplemented!(),
             };
 
             let mount_point = part_desc.1.clone();
@@ -511,6 +516,26 @@ fn write_manifest_to_dir(
     Ok(())
 }
 
+fn get_partition_table_string(manifest: &LocalManifest<'_>) -> Result<String, OciBootstrapError> {
+    let configuration = manifest.configuration();
+    let labels = configuration.labels_of_config();
+
+    Ok(labels
+        .ok_or(OciBootstrapError::Custom("Missing labels".to_owned()))?
+        .get("com.github.mripard.ocibootstrap.table.json")
+        .ok_or(OciBootstrapError::Custom(
+            "Missing partition layout".to_owned(),
+        ))?
+        .to_owned())
+}
+
+fn get_partition_table(manifest: &LocalManifest<'_>) -> Result<Value, OciBootstrapError> {
+    let table_str = get_partition_table_string(manifest)?;
+    let table = serde_json::from_str(&table_str)?;
+
+    Ok(table)
+}
+
 fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
 
@@ -554,7 +579,10 @@ fn main() -> Result<(), anyhow::Error> {
                 .context("Couldn't find manifest")?;
 
             let file = File::options().read(true).write(true).open(output)?;
-            let partition_table = manifest.configuration().try_into()?;
+
+            let table = get_partition_table(&manifest)?;
+            let partition_table: PartitionTable = serde_json::from_value(table)?;
+
             let device = create_and_mount_loop_device(file, &partition_table)?;
             write_manifest_to_dir(&manifest, device.dir.path())?;
 
