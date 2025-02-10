@@ -20,6 +20,7 @@ clap = { version = "4.5.17", default-features = false, features = [
 ] }
 crc = { version = "3.2.1", default-features = false }
 gpt = { package = "ocibootstrap-gpt", path = "./ocibootstrap-gpt" }
+layout = { package = "ocibootstrap-partitions-layout", path = "./ocibootstrap-partitions-layout" }
 log = { version = "0.4.22", default-features = false }
 mbr = { package = "ocibootstrap-mbr", path = "./ocibootstrap-mbr" }
 num-traits = { version = "0.2.19", default-features = false }
