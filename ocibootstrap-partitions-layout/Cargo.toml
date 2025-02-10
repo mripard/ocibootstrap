@@ -24,3 +24,8 @@ uuid = { workspace = true, features = ["serde"] }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "json-schema"
+path = "examples/json-schema.rs"
+required-features = ["schema"]
