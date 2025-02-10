@@ -54,6 +54,9 @@ struct Cli {
     #[arg(short, long, default_value_t, help = "Architecture")]
     arch: Architecture,
 
+    #[arg(short, long, help = "Partition Table Description")]
+    table: Option<PathBuf>,
+
     #[clap(subcommand)]
     command: CliSubcommand,
 }
@@ -516,21 +519,31 @@ fn write_manifest_to_dir(
     Ok(())
 }
 
-fn get_partition_table_string(manifest: &LocalManifest<'_>) -> Result<String, OciBootstrapError> {
-    let configuration = manifest.configuration();
-    let labels = configuration.labels_of_config();
+fn get_partition_table_string(
+    cli: &Cli,
+    manifest: &LocalManifest<'_>,
+) -> Result<String, OciBootstrapError> {
+    Ok(if let Some(table) = &cli.table {
+        fs::read_to_string(table)?
+    } else {
+        let configuration = manifest.configuration();
+        let labels = configuration.labels_of_config();
 
-    Ok(labels
-        .ok_or(OciBootstrapError::Custom("Missing labels".to_owned()))?
-        .get("com.github.mripard.ocibootstrap.table.json")
-        .ok_or(OciBootstrapError::Custom(
-            "Missing partition layout".to_owned(),
-        ))?
-        .to_owned())
+        labels
+            .ok_or(OciBootstrapError::Custom("Missing labels".to_owned()))?
+            .get("com.github.mripard.ocibootstrap.table.json")
+            .ok_or(OciBootstrapError::Custom(
+                "Missing partition layout".to_owned(),
+            ))?
+            .to_owned()
+    })
 }
 
-fn get_partition_table(manifest: &LocalManifest<'_>) -> Result<Value, OciBootstrapError> {
-    let table_str = get_partition_table_string(manifest)?;
+fn get_partition_table(
+    cli: &Cli,
+    manifest: &LocalManifest<'_>,
+) -> Result<Value, OciBootstrapError> {
+    let table_str = get_partition_table_string(cli, manifest)?;
     let table = serde_json::from_str(&table_str)?;
 
     Ok(table)
@@ -580,7 +593,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             let file = File::options().read(true).write(true).open(output)?;
 
-            let table = get_partition_table(&manifest)?;
+            let table = get_partition_table(&cli, &manifest)?;
             let partition_table: PartitionTable = serde_json::from_value(table)?;
 
             let device = create_and_mount_loop_device(file, &partition_table)?;
