@@ -4,10 +4,7 @@
 extern crate alloc;
 
 use alloc::fmt;
-use core::str::FromStr;
 use std::{env::consts, io};
-
-use serde::{Deserialize, de};
 
 /// Representation of an hardware architecture
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -171,6 +168,10 @@ pub enum OciBootstrapError {
     #[error("JSON Parsing Failure")]
     Json(#[from] serde_json::Error),
 
+    /// An error has occurred when interacting with OCI images or registries
+    #[error("OCI Specicication Error")]
+    OciSpec(#[from] oci_spec::OciSpecError),
+
     /// An error has occurred when parsing TOML configuration files
     #[error("Configuration File Format Error")]
     Toml(#[from] toml::de::Error),
@@ -182,112 +183,4 @@ pub enum OciBootstrapError {
     /// An unknown error occurred
     #[error("Error: {0}")]
     Custom(String),
-}
-
-/// Digest Algorithm Representation
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DigestAlgorithm {
-    /// NSA SHA-2 SHA-256 Algorithm
-    Sha256,
-
-    /// NSA SHA-2 SHA-512 Algorithm
-    Sha512,
-}
-
-impl FromStr for DigestAlgorithm {
-    type Err = OciBootstrapError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let alg = match s {
-            "sha256" => DigestAlgorithm::Sha256,
-            "sha512" => DigestAlgorithm::Sha512,
-            _ => unimplemented!(),
-        };
-
-        Ok(alg)
-    }
-}
-
-impl fmt::Display for DigestAlgorithm {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Sha256 => "sha256",
-            Self::Sha512 => "sha512",
-        })
-    }
-}
-
-/// A Digest Representation
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Digest {
-    digest: DigestAlgorithm,
-    bytes: Vec<u8>,
-}
-
-impl Digest {
-    /// Creates a new Digest from an algorithm and a hash
-    ///
-    /// # Errors
-    ///
-    /// If the hash isn't encoded in hexadecimal.
-    pub fn new(alg: DigestAlgorithm, id: &str) -> Result<Self, OciBootstrapError> {
-        Ok(Digest {
-            digest: alg,
-            bytes: hex::decode(id).map_err(|e| OciBootstrapError::Custom(e.to_string()))?,
-        })
-    }
-
-    /// Parses an OCI digest representation
-    ///
-    /// # Errors
-    ///
-    /// If the string format doesn't match the specification, or if the digest algorithm isn't
-    /// known.
-    pub fn from_oci_str(id: &str) -> Result<Self, OciBootstrapError> {
-        let (alg, dig) = id
-            .split_once(':')
-            .ok_or(OciBootstrapError::Custom(String::from(
-                "Malformed Digest Representation",
-            )))?;
-
-        let alg = match alg {
-            "sha256" => DigestAlgorithm::Sha256,
-            "sha512" => DigestAlgorithm::Sha512,
-            _ => {
-                return Err(OciBootstrapError::Custom(format!(
-                    "Unknown algorithm {alg}"
-                )));
-            }
-        };
-
-        Self::new(alg, dig)
-    }
-
-    /// Returns the raw digest as a hex String
-    #[must_use]
-    pub fn to_raw_string(&self) -> String {
-        hex::encode(&self.bytes)
-    }
-
-    /// Returns the digest as a String, with the OCI representation
-    #[must_use]
-    pub fn to_oci_string(&self) -> String {
-        format!("{}:{}", self.digest, self.to_raw_string())
-    }
-}
-
-impl fmt::Display for Digest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_oci_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Self::from_oci_str(&s).map_err(de::Error::custom)
-    }
 }

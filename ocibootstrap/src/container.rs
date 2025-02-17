@@ -1,12 +1,16 @@
-use core::fmt;
+use core::{fmt, str::FromStr as _};
 
 use log::debug;
-use types::Digest;
+use oci_spec::image::Digest;
 
 use crate::{
     OciBootstrapError,
     config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
 };
+
+pub(crate) fn digest_to_oci_string(digest: &Digest) -> String {
+    format!("{}:{}", digest.algorithm(), digest.digest())
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ContainerReference {
@@ -18,7 +22,7 @@ impl fmt::Display for ContainerReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ContainerReference::Tag(t) => f.write_str(t),
-            ContainerReference::Digest(d) => f.write_str(&d.to_oci_string()),
+            ContainerReference::Digest(d) => f.write_str(d.digest()),
         }
     }
 }
@@ -35,7 +39,7 @@ impl ContainerSpec {
         debug!("Parsing container {name}");
 
         let (name, reference) = if let Some((name, digest)) = name.rsplit_once('@') {
-            let digest = Digest::from_oci_str(digest)?;
+            let digest = Digest::from_str(digest)?;
             (name, ContainerReference::Digest(digest))
         } else if let Some((name, tag)) = name.rsplit_once(':') {
             (name, ContainerReference::Tag(tag.to_owned()))
@@ -96,7 +100,7 @@ impl ContainerSpec {
         match &self.reference {
             ContainerReference::Tag(t) => format!("{}/{}:{}", self.domain, self.name, t),
             ContainerReference::Digest(d) => {
-                format!("{}/{}@{}", self.domain, self.name, d.to_oci_string())
+                format!("{}/{}@{}", self.domain, self.name, digest_to_oci_string(d))
             }
         }
     }
@@ -110,8 +114,10 @@ impl fmt::Display for ContainerSpec {
 
 #[cfg(test)]
 mod registry_url_tests {
+    use std::str::FromStr;
+
+    use oci_spec::image::Digest;
     use test_log::test;
-    use types::Digest;
 
     use crate::{
         config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
@@ -238,7 +244,7 @@ mod registry_url_tests {
                 domain: String::from("quay.io"),
                 name: String::from("fedora/fedora-minimal"),
                 reference: ContainerReference::Digest(
-                    Digest::from_oci_str(
+                    Digest::from_str(
                         "sha256:ea58cd083e2410fd40f1c41be33ed785028c8f6f99d0ea258c80eedbc5ded1bc"
                     )
                     .unwrap()

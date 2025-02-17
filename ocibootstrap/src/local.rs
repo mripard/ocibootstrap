@@ -1,3 +1,4 @@
+use core::str::FromStr as _;
 use std::{
     collections::HashMap,
     fs::File,
@@ -9,37 +10,37 @@ use base64::Engine as _;
 use jiff::Timestamp;
 use log::{debug, trace};
 use nix::unistd::Uid;
-use oci_spec::image::{ImageConfiguration, ImageManifest};
-use serde::{Deserialize, de};
+use oci_spec::image::{Digest, ImageConfiguration, ImageManifest, Sha256Digest};
+use serde::{de, Deserialize};
 use serde_json::Value;
 use tar_split::TarSplitReader;
-use types::{Architecture, Digest, DigestAlgorithm, OciBootstrapError, OperatingSystem};
+use types::{Architecture, OciBootstrapError, OperatingSystem};
 
-use crate::container::ContainerSpec;
+use crate::container::{digest_to_oci_string, ContainerSpec};
 
 fn digest_to_oci_base64(digest: &Digest) -> String {
     // For some reason, it appears the blobs when stored on the FS are regular base64 encoding
     // with an extra padding at the beginning
     format!(
         "={}",
-        base64::engine::general_purpose::STANDARD.encode(digest.to_oci_string().as_bytes())
+        base64::engine::general_purpose::STANDARD.encode(digest_to_oci_string(digest).as_bytes())
     )
 }
 
-fn deserialize_sha256_digest<'de, D>(deserializer: D) -> Result<Digest, D::Error>
+fn deserialize_sha256_digest<'de, D>(deserializer: D) -> Result<Sha256Digest, D::Error>
 where
     D: de::Deserializer<'de>,
 {
-    let id = String::deserialize(deserializer)?;
+    let s = String::deserialize(deserializer)?;
 
-    Digest::new(DigestAlgorithm::Sha256, &id).map_err(de::Error::custom)
+    Sha256Digest::from_str(&s).map_err(de::Error::custom)
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LocalContainerImage {
     #[serde(deserialize_with = "deserialize_sha256_digest")]
-    id: Digest,
+    id: Sha256Digest,
 
     #[serde(rename = "digest")]
     _digest: Digest,
@@ -88,7 +89,7 @@ struct IdMap {
 #[serde(deny_unknown_fields)]
 struct LocalContainerLayer {
     #[serde(deserialize_with = "deserialize_sha256_digest")]
-    id: Digest,
+    id: Sha256Digest,
 
     #[serde(default, rename = "names")]
     _names: Vec<String>,
@@ -180,7 +181,7 @@ impl LocalRegistry {
         debug!("Looking for layer {id}");
 
         self.layers.iter().find(|l| {
-            if l.id.to_raw_string() == id {
+            if l.id.digest() == id {
                 debug!("Found matching layer");
                 true
             } else {
@@ -224,7 +225,7 @@ impl LocalImage<'_> {
         let path = self
             .registry
             .overlay_images_dir()
-            .join(self.image.id.to_raw_string());
+            .join(self.image.id.digest());
         debug!("Path to image dir {}", path.display());
 
         let manifest_path = path.join("manifest");
@@ -232,8 +233,7 @@ impl LocalImage<'_> {
         let manifest: ImageManifest = serde_json::from_reader(&manifest_file)?;
 
         let cfg_desc = manifest.config();
-        let cfg_digest = Digest::from_oci_str(cfg_desc.digest())?;
-        let cfg_path = path.join(digest_to_oci_base64(&cfg_digest));
+        let cfg_path = path.join(digest_to_oci_base64(cfg_desc.digest()));
         debug!("Config Path {}", cfg_path.display());
 
         let cfg_file = File::open(&cfg_path)?;
@@ -296,14 +296,14 @@ pub(crate) struct LocalLayer<'a>(&'a LocalRegistry, &'a LocalContainerLayer);
 
 impl LocalLayer<'_> {
     pub(crate) fn digest(&self) -> Digest {
-        self.1.id.clone()
+        self.1.id.clone().into()
     }
 
     pub(crate) fn archive(&self) -> io::Result<TarSplitReader<'_, Box<dyn Read>>> {
         let split_path = self
             .0
             .overlay_layers_dir()
-            .join(format!("{}.tar-split.gz", self.1.id.to_raw_string()));
+            .join(format!("{}.tar-split.gz", self.1.id.digest()));
 
         debug!("Opening Tar Split Archive {}", split_path.display());
 
@@ -312,7 +312,7 @@ impl LocalLayer<'_> {
                 .0
                 .storage_dir()
                 .join("overlay")
-                .join(self.1.id.to_raw_string())
+                .join(self.1.id.digest())
                 .join("diff"),
             &split_path,
         )
