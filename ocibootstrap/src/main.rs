@@ -522,9 +522,9 @@ fn main() -> Result<(), anyhow::Error> {
         env!("CARGO_PKG_VERSION")
     );
 
-    match cli.command {
+    match &cli.command {
         CliSubcommand::Device { output, container } => {
-            let container_spec = ContainerSpec::from_container_name(&container)?;
+            let container_spec = ContainerSpec::from_container_name(container)?;
 
             info!(
                 "Using container {} with output device {}",
@@ -553,7 +553,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .manifest_for_platform(cli.arch, OperatingSystem::default())?
                 .context("Couldn't find manifest")?;
 
-            let file = File::options().read(true).write(true).open(&output)?;
+            let file = File::options().read(true).write(true).open(output)?;
             let partition_table = manifest.configuration().try_into()?;
             let device = create_and_mount_loop_device(file, &partition_table)?;
             write_manifest_to_dir(&manifest, device.dir.path())?;
@@ -591,7 +591,7 @@ fn main() -> Result<(), anyhow::Error> {
             Ok(())
         }
         CliSubcommand::Directory { output, container } => {
-            let container_spec = ContainerSpec::from_container_name(&container)?;
+            let container_spec = ContainerSpec::from_container_name(container)?;
 
             info!(
                 "Using container {} with output directory {}",
@@ -601,7 +601,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             if !output.exists() {
                 debug!("Output directory doesn't exist, creating.");
-                fs::create_dir_all(&output)?;
+                fs::create_dir_all(output)?;
             }
 
             if !output.is_dir() {
@@ -619,7 +619,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .manifest_for_platform(cli.arch, OperatingSystem::default())?
                 .context("Couldn't find manifest")?;
 
-            write_manifest_to_dir(&manifest, &output)?;
+            write_manifest_to_dir(&manifest, output)?;
             Ok(())
         }
     }
