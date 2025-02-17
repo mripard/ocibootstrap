@@ -151,11 +151,20 @@ impl LocalRegistry {
     pub(crate) fn new() -> Result<Self, OciBootstrapError> {
         let base_dir = get_containers_dir()?;
         let storage_dir = base_dir.join("storage");
-        let images_file = File::open(storage_dir.join("overlay-images").join("images.json"))?;
+        let overlay_dir = storage_dir.join("overlay-images");
+        let images_file_path = overlay_dir.join("images.json");
+
+        debug!("Openining images file {}", images_file_path.display());
+
+        let images_file = File::open(images_file_path)?;
         let images: Vec<LocalContainerImage> = serde_json::from_reader(&images_file)?;
 
         let layers_dir = storage_dir.join("overlay-layers");
-        let layer_file = File::open(layers_dir.join("layers.json"))?;
+        let layers_file_path = layers_dir.join("layers.json");
+
+        debug!("Openining layers file {}", layers_file_path.display());
+
+        let layer_file = File::open(layers_file_path)?;
         let layers: Vec<LocalContainerLayer> = serde_json::from_reader(&layer_file)?;
 
         Ok(Self {
