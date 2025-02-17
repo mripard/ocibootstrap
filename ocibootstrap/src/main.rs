@@ -30,6 +30,8 @@ mod local;
 
 use crate::container::ContainerSpec;
 
+const JSON_PART_SCHEMA: &str = include_str!("../resources/part-schema.json");
+
 #[derive(Debug, Subcommand)]
 enum CliSubcommand {
     Device {
@@ -539,12 +541,18 @@ fn get_partition_table_string(
     })
 }
 
-fn get_partition_table(
+fn get_and_validate_partition_table(
     cli: &Cli,
     manifest: &LocalManifest<'_>,
 ) -> Result<Value, OciBootstrapError> {
     let table_str = get_partition_table_string(cli, manifest)?;
+
+    let schema = serde_json::from_str(JSON_PART_SCHEMA)?;
     let table = serde_json::from_str(&table_str)?;
+
+    if let Err(e) = jsonschema::validate(&schema, &table) {
+        return Err(OciBootstrapError::Custom(e.to_string()));
+    }
 
     Ok(table)
 }
@@ -593,7 +601,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             let file = File::options().read(true).write(true).open(output)?;
 
-            let table = get_partition_table(&cli, &manifest)?;
+            let table = get_and_validate_partition_table(&cli, &manifest)?;
             let partition_table: PartitionTable = serde_json::from_value(table)?;
 
             let device = create_and_mount_loop_device(file, &partition_table)?;
