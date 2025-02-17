@@ -5,6 +5,7 @@ use std::io;
 
 use log::debug;
 use num_traits::{ConstOne, ConstZero};
+use test_log as _;
 
 /// Returns a rounded down number to the nearest multiple
 ///
