@@ -1,12 +1,19 @@
+#![allow(missing_docs)]
+
 use std::{
     fs::File,
     io::{self, Seek},
     path::{Path, PathBuf},
 };
 
+use base64 as _;
+use crc as _;
 use flate2::read::GzDecoder;
+use infer as _;
 use log::debug;
 use ocibootstrap_tar_split::from_path;
+use serde as _;
+use serde_json as _;
 use tar::Archive;
 use tempfile::{NamedTempFile, TempDir};
 use test_log::test;

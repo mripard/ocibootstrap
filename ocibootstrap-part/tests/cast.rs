@@ -1,3 +1,9 @@
+#![allow(missing_docs)]
+
+use log as _;
+use num_traits as _;
+use test_log::test;
+
 #[test]
 fn num_cast() {
     assert_eq!(ocibootstrap_part::num_cast!(u64, 42_usize), 42_u64);

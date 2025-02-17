@@ -16,6 +16,4 @@ workspace = true
 [dependencies]
 log = { workspace = true }
 num-traits = { workspace = true }
-
-[dev-dependencies]
 test-log = { workspace = true }
