@@ -1,7 +1,7 @@
 use std::{fs, io};
 
 use once_cell::sync::Lazy;
-use toml::{map::Map, Table, Value};
+use toml::{Table, Value, map::Map};
 
 use crate::OciBootstrapError;
 

@@ -221,21 +221,23 @@ pub fn build_layout(
 
                 (offset_lba, size_lba)
             } else if let (Some(size_lba), None) = (part.size_lba, part.offset_lba) {
-                debug!("Partition {idx}: Fixed size ({size_lba} LBAs). Last Available LBA {last_available_lba}");
+                debug!(
+                    "Partition {idx}: Fixed size ({size_lba} LBAs). Last Available LBA {last_available_lba}"
+                );
 
                 let offset_lba = last_available_lba - (size_lba - 1);
 
                 debug!(
-                        "Partition {idx}: Fixed size ({size_lba} LBAs). Offset derived at LBA {offset_lba}"
-                    );
+                    "Partition {idx}: Fixed size ({size_lba} LBAs). Offset derived at LBA {offset_lba}"
+                );
 
                 (offset_lba, size_lba)
             } else if let (None, Some(offset_lba)) = (part.size_lba, part.offset_lba) {
                 let size_lba = (last_available_lba - offset_lba) + 1;
 
                 debug!(
-                        "Partition {idx}: Fixed offset (LBA {offset_lba}). Size derived at {size_lba} LBAs"
-                    );
+                    "Partition {idx}: Fixed offset (LBA {offset_lba}). Size derived at {size_lba} LBAs"
+                );
 
                 (offset_lba, size_lba)
             } else {
@@ -243,8 +245,8 @@ pub fn build_layout(
                 let size_lba = (last_available_lba - missing_part_offset_lba) + 1;
 
                 debug!(
-                        "Partition {idx}: Offset derived at LBA {offset_lba}. Size derived at {size_lba} LBAs"
-                    );
+                    "Partition {idx}: Offset derived at LBA {offset_lba}. Size derived at {size_lba} LBAs"
+                );
 
                 (offset_lba, size_lba)
             };

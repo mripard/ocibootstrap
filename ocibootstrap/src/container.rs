@@ -4,8 +4,8 @@ use log::debug;
 use types::Digest;
 
 use crate::{
-    config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
     OciBootstrapError,
+    config::{CONTAINERS_CFG, CONTAINERS_CFG_ALIASES_KEY},
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -122,13 +122,15 @@ mod registry_url_tests {
     fn test_short_name_with_alias() {
         let container_name = "debian";
 
-        assert!(CONTAINERS_CFG
-            .as_ref()
-            .unwrap()
-            .get(CONTAINERS_CFG_ALIASES_KEY)
-            .unwrap()
-            .get(container_name)
-            .is_some());
+        assert!(
+            CONTAINERS_CFG
+                .as_ref()
+                .unwrap()
+                .get(CONTAINERS_CFG_ALIASES_KEY)
+                .unwrap()
+                .get(container_name)
+                .is_some()
+        );
 
         assert_eq!(
             ContainerSpec::from_container_name(container_name).unwrap(),
@@ -144,13 +146,15 @@ mod registry_url_tests {
     fn test_short_name_with_alias_tag() {
         let container_name = "ubuntu:24.04";
 
-        assert!(CONTAINERS_CFG
-            .as_ref()
-            .unwrap()
-            .get(CONTAINERS_CFG_ALIASES_KEY)
-            .unwrap()
-            .get("ubuntu")
-            .is_some());
+        assert!(
+            CONTAINERS_CFG
+                .as_ref()
+                .unwrap()
+                .get(CONTAINERS_CFG_ALIASES_KEY)
+                .unwrap()
+                .get("ubuntu")
+                .is_some()
+        );
 
         assert_eq!(
             ContainerSpec::from_container_name(container_name).unwrap(),
@@ -166,13 +170,15 @@ mod registry_url_tests {
     fn test_short_name_without_alias() {
         let container_name = "nginx";
 
-        assert!(CONTAINERS_CFG
-            .as_ref()
-            .unwrap()
-            .get(CONTAINERS_CFG_ALIASES_KEY)
-            .unwrap()
-            .get(container_name)
-            .is_none());
+        assert!(
+            CONTAINERS_CFG
+                .as_ref()
+                .unwrap()
+                .get(CONTAINERS_CFG_ALIASES_KEY)
+                .unwrap()
+                .get(container_name)
+                .is_none()
+        );
 
         assert!(ContainerSpec::from_container_name(container_name).is_err());
     }
@@ -181,13 +187,15 @@ mod registry_url_tests {
     fn test_long_name_without_alias() {
         let container_name = "pytorch/pytorch";
 
-        assert!(CONTAINERS_CFG
-            .as_ref()
-            .unwrap()
-            .get(CONTAINERS_CFG_ALIASES_KEY)
-            .unwrap()
-            .get(container_name)
-            .is_none());
+        assert!(
+            CONTAINERS_CFG
+                .as_ref()
+                .unwrap()
+                .get(CONTAINERS_CFG_ALIASES_KEY)
+                .unwrap()
+                .get(container_name)
+                .is_none()
+        );
 
         assert!(ContainerSpec::from_container_name("pytorch/pytorch").is_err());
     }

@@ -10,7 +10,7 @@ use jiff::Timestamp;
 use log::{debug, trace};
 use nix::unistd::Uid;
 use oci_spec::image::{ImageConfiguration, ImageManifest};
-use serde::{de, Deserialize};
+use serde::{Deserialize, de};
 use serde_json::Value;
 use tar_split::TarSplitReader;
 use types::{Architecture, Digest, DigestAlgorithm, OciBootstrapError, OperatingSystem};

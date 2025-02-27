@@ -7,7 +7,7 @@ use alloc::fmt;
 use core::str::FromStr;
 use std::{env::consts, io};
 
-use serde::{de, Deserialize};
+use serde::{Deserialize, de};
 
 /// Representation of an hardware architecture
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -43,7 +43,7 @@ impl Architecture {
             _ => {
                 return Err(OciBootstrapError::Custom(format!(
                     "Unknown Architecture {s}"
-                )))
+                )));
             }
         })
     }
@@ -62,7 +62,7 @@ impl Architecture {
             _ => {
                 return Err(OciBootstrapError::Custom(format!(
                     "Unknown architecture: {s}"
-                )))
+                )));
             }
         })
     }
@@ -256,7 +256,7 @@ impl Digest {
             _ => {
                 return Err(OciBootstrapError::Custom(format!(
                     "Unknown algorithm {alg}"
-                )))
+                )));
             }
         };
 

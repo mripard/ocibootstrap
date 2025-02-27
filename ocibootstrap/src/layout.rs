@@ -437,7 +437,7 @@ impl TryFrom<&ImageConfiguration> for PartitionTable {
             _ => {
                 return Err(OciBootstrapError::Custom(format!(
                     "Invalid Layout Type: {layout_type}"
-                )))
+                )));
             }
         })
     }

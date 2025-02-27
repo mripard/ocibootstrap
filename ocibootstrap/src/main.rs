@@ -9,12 +9,12 @@ use std::{
     process::Command,
 };
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand};
 use gpt::{GuidPartitionBuilder, GuidPartitionTableBuilder};
 use layout::{Filesystem, GptPartitionTable, MbrPartitionTable, PartitionTable};
 use local::{LocalManifest, LocalRegistry};
-use log::{debug, error, info, log_enabled, trace, Level};
+use log::{Level, debug, error, info, log_enabled, trace};
 use loopdev::LoopControl;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use serde::Deserialize;

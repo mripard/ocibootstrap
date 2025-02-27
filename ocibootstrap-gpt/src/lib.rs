@@ -8,8 +8,8 @@ use std::{
 use bit_field::BitField as _;
 use log::debug;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
-use part::{build_layout, num_cast, start_end_to_size, PartitionLayout, PartitionLayoutHint};
-use uuid::{uuid, Uuid};
+use part::{PartitionLayout, PartitionLayoutHint, build_layout, num_cast, start_end_to_size};
+use uuid::{Uuid, uuid};
 
 const BLOCK_SIZE: usize = 512;
 
@@ -431,8 +431,8 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        GuidPartitionBuilder, GuidPartitionTableBuilder, BLOCK_SIZE, EFI_SYSTEM_PART_GUID,
-        EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA, GPT_PARTITION_HEADER_SIZE_LBA,
+        BLOCK_SIZE, EFI_SYSTEM_PART_GUID, EXTENDED_BOOTLOADER_PART_GUID, GPT_HEADER_SIZE_LBA,
+        GPT_PARTITION_HEADER_SIZE_LBA, GuidPartitionBuilder, GuidPartitionTableBuilder,
         MBR_SIZE_LBA,
     };
 

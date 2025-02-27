@@ -10,11 +10,11 @@ use std::{
 };
 
 use base64::Engine as _;
-use crc::{Crc, Digest as CrcDigest, CRC_64_GO_ISO};
+use crc::{CRC_64_GO_ISO, Crc, Digest as CrcDigest};
 use flate2::bufread::GzDecoder;
 use log::debug;
-use serde::{de, Deserialize};
-use serde_json::{de::IoRead, StreamDeserializer, Value};
+use serde::{Deserialize, de};
+use serde_json::{StreamDeserializer, Value, de::IoRead};
 
 fn base64_decode<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
@@ -376,14 +376,20 @@ where
                     let payload_len = f.payload.len();
 
                     if buf_len >= payload_len {
-                        debug!("Position {}: Buffer is large enough to hold the payload (buf {buf_len}, payload {payload_len})", f.position);
+                        debug!(
+                            "Position {}: Buffer is large enough to hold the payload (buf {buf_len}, payload {payload_len})",
+                            f.position
+                        );
                         buf[0..payload_len].copy_from_slice(&f.payload);
                         debug!("Position {}: Returned length {payload_len}", f.position);
 
                         return Ok(payload_len);
                     }
 
-                    debug!("Position {}: Buffer is too small to hold the payload (buf {buf_len}, payload {payload_len}). Postponing the rest.", f.position);
+                    debug!(
+                        "Position {}: Buffer is too small to hold the payload (buf {buf_len}, payload {payload_len}). Postponing the rest.",
+                        f.position
+                    );
 
                     let mut payload = f.payload.clone();
                     let bytes: Vec<_> = payload.drain(0..buf_len).collect();

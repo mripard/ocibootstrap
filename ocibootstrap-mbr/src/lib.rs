@@ -10,7 +10,7 @@ use bit_field::BitField as _;
 use log::debug;
 use num_traits::ToPrimitive as _;
 use part::{
-    build_layout, div_round_up, num_cast, start_end_to_size, PartitionLayout, PartitionLayoutHint,
+    PartitionLayout, PartitionLayoutHint, build_layout, div_round_up, num_cast, start_end_to_size,
 };
 
 const LBA_SIZE: usize = 512;
@@ -272,13 +272,13 @@ mod tests {
     use log::{debug, trace};
     use num_traits::ToPrimitive;
     use part::{num_cast, round_up};
-    use serde::{de, Deserialize};
+    use serde::{Deserialize, de};
     use tempfile::NamedTempFile;
     use test_log::test;
 
     use crate::{
-        MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder, LBA_SIZE,
-        MBR_LBA_OFFSET, MBR_LBA_SIZE,
+        LBA_SIZE, MBR_LBA_OFFSET, MBR_LBA_SIZE, MasterBootRecordPartitionBuilder,
+        MasterBootRecordPartitionTableBuilder,
     };
 
     const TEST_PARTITION_TYPE: u8 = 42;
