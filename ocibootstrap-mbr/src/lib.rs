@@ -180,7 +180,7 @@ impl MasterBootRecordPartitionTable {
 
         let mut mbr = [0u8; 512];
 
-        let disk_id = rand::random::<u32>();
+        let disk_id = fastrand::u32(..);
 
         debug!("Using Disk Identifier 0x{:x}", disk_id);
 
