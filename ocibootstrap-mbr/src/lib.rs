@@ -115,7 +115,7 @@ impl MasterBootRecordPartitionTable {
             let c_lo = num_cast!(u8, c & 0xff);
             let c_hi = num_cast!(u8, (c >> 8) & 0x3);
 
-            [h, c_hi << 6 | s & 0x3f, c_lo]
+            [h, (c_hi << 6) | s & 0x3f, c_lo]
         } else {
             [0xff, 0xff, 0xff]
         }
