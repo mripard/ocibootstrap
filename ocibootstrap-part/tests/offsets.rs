@@ -1,3 +1,9 @@
+#![allow(missing_docs)]
+
+use log as _;
+use num_traits as _;
+use test_log::test;
+
 #[test]
 fn start_end_to_size() {
     assert_eq!(ocibootstrap_part::start_end_to_size(10, 19), 10);

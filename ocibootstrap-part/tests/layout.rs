@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+
+use log as _;
+use num_traits as _;
 use test_log::test;
 
 #[test]

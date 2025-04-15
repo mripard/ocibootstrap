@@ -1,0 +1,318 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PartitionTable",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "partitions",
+        "type"
+      ],
+      "properties": {
+        "partitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GptPartition"
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "gpt"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "partitions",
+        "type"
+      ],
+      "properties": {
+        "partitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MbrPartition"
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "mbr"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "Filesystem": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "heads": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "sectors-per-track": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "fat"
+              ]
+            },
+            "volume-id": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ext4"
+              ]
+            },
+            "uuid": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "volumes"
+          ],
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "lvm"
+              ]
+            },
+            "volumes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LvmVolume"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "content",
+            "type"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "raw"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "swap"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "xfs"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "GptPartition": {
+      "type": "object",
+      "required": [
+        "fs",
+        "uuid"
+      ],
+      "properties": {
+        "attributes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        },
+        "bootable": {
+          "default": false,
+          "type": "boolean"
+        },
+        "fs": {
+          "$ref": "#/definitions/Filesystem"
+        },
+        "mnt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset_lba": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "platform-required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "size_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LvmVolume": {
+      "type": "object",
+      "required": [
+        "fs"
+      ],
+      "properties": {
+        "fs": {
+          "$ref": "#/definitions/Filesystem"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "MbrPartition": {
+      "type": "object",
+      "required": [
+        "fs",
+        "type"
+      ],
+      "properties": {
+        "bootable": {
+          "default": false,
+          "type": "boolean"
+        },
+        "fs": {
+          "$ref": "#/definitions/Filesystem"
+        },
+        "mnt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset_lba": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "size_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "type": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

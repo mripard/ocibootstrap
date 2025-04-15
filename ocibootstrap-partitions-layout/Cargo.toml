@@ -1,0 +1,31 @@
+[package]
+name = "ocibootstrap-partitions-layout"
+version = "0.1.0"
+authors = ["Maxime Ripard <mripard@kernel.org>"]
+description = "Partition Table Layout Description Library"
+edition = "2021"
+readme = "./README.md"
+license-file = "../LICENSE"
+keywords = ["partition"]
+categories = ["filesystem"]
+repository = "https://github.com/mripard/ocibootstrap/"
+
+[features]
+schema = ["dep:schemars"]
+
+[dependencies]
+schemars = { version = "0.8.21", default-features = false, features = [
+    "derive",
+    "uuid1",
+], optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+
+[lints]
+workspace = true
+
+[[example]]
+name = "json-schema"
+path = "examples/json-schema.rs"
+required-features = ["schema"]

@@ -18,6 +18,7 @@ use log::{Level, debug, error, info, log_enabled, trace};
 use loopdev::LoopControl;
 use mbr::{MasterBootRecordPartitionBuilder, MasterBootRecordPartitionTableBuilder};
 use serde::Deserialize;
+use serde_json::Value;
 use sys_mount::{FilesystemType, Mount, Unmount as _, UnmountFlags};
 use tar::Archive;
 use tempfile::TempDir;
@@ -25,10 +26,11 @@ use types::{Architecture, OciBootstrapError, OperatingSystem};
 
 mod config;
 mod container;
-mod layout;
 mod local;
 
 use crate::container::ContainerSpec;
+
+const JSON_PART_SCHEMA: &str = include_str!("../resources/part-schema.json");
 
 #[derive(Debug, Subcommand)]
 enum CliSubcommand {
@@ -53,6 +55,9 @@ enum CliSubcommand {
 struct Cli {
     #[arg(short, long, default_value_t, help = "Architecture")]
     arch: Architecture,
+
+    #[arg(short, long, help = "Partition Table Description")]
+    table: Option<PathBuf>,
 
     #[clap(subcommand)]
     command: CliSubcommand,
@@ -280,7 +285,7 @@ fn create_gpt(
     file: &mut File,
 ) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = GuidPartitionTableBuilder::new();
-    for partition in table.partitions() {
+    for partition in &table.partitions {
         let mut part_builder = GuidPartitionBuilder::new(partition.uuid);
 
         if let Some(name) = &partition.name {
@@ -293,6 +298,10 @@ fn create_gpt(
 
         if let Some(size_bytes) = partition.size_bytes {
             part_builder = part_builder.size(size_bytes);
+        }
+
+        for attr in &partition.attributes {
+            part_builder = part_builder.set_flag(*attr);
         }
 
         let part = part_builder
@@ -308,7 +317,7 @@ fn create_gpt(
     file.sync_all()?;
 
     Ok(table
-        .partitions()
+        .partitions
         .iter()
         .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
@@ -319,7 +328,7 @@ fn create_mbr(
     file: &mut File,
 ) -> Result<Vec<(Filesystem, Option<PathBuf>)>, OciBootstrapError> {
     let mut builder = MasterBootRecordPartitionTableBuilder::new();
-    for partition in table.partitions() {
+    for partition in &table.partitions {
         let mut part_builder = MasterBootRecordPartitionBuilder::new(partition.kind);
 
         if let Some(offset_lba) = partition.offset_lba {
@@ -340,7 +349,7 @@ fn create_mbr(
     file.sync_all()?;
 
     Ok(table
-        .partitions()
+        .partitions
         .iter()
         .map(|p| (p.fs.clone(), p.mnt.clone()))
         .collect())
@@ -419,6 +428,7 @@ fn create_and_mount_loop_device(
                 Filesystem::Raw(_) => {
                     debug!("Raw Partition, Skipping.");
                 }
+                Filesystem::Lvm(_) | Filesystem::Swap | Filesystem::Xfs => unimplemented!(),
             };
 
             let mount_point = part_desc.1.clone();
@@ -511,6 +521,42 @@ fn write_manifest_to_dir(
     Ok(())
 }
 
+fn get_partition_table_string(
+    cli: &Cli,
+    manifest: &LocalManifest<'_>,
+) -> Result<String, OciBootstrapError> {
+    Ok(if let Some(table) = &cli.table {
+        fs::read_to_string(table)?
+    } else {
+        let configuration = manifest.configuration();
+        let labels = configuration.labels_of_config();
+
+        labels
+            .ok_or(OciBootstrapError::Custom("Missing labels".to_owned()))?
+            .get("com.github.mripard.ocibootstrap.table.json")
+            .ok_or(OciBootstrapError::Custom(
+                "Missing partition layout".to_owned(),
+            ))?
+            .to_owned()
+    })
+}
+
+fn get_and_validate_partition_table(
+    cli: &Cli,
+    manifest: &LocalManifest<'_>,
+) -> Result<Value, OciBootstrapError> {
+    let table_str = get_partition_table_string(cli, manifest)?;
+
+    let schema = serde_json::from_str(JSON_PART_SCHEMA)?;
+    let table = serde_json::from_str(&table_str)?;
+
+    if let Err(e) = jsonschema::validate(&schema, &table) {
+        return Err(OciBootstrapError::Custom(e.to_string()));
+    }
+
+    Ok(table)
+}
+
 fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
 
@@ -522,9 +568,9 @@ fn main() -> Result<(), anyhow::Error> {
         env!("CARGO_PKG_VERSION")
     );
 
-    match cli.command {
+    match &cli.command {
         CliSubcommand::Device { output, container } => {
-            let container_spec = ContainerSpec::from_container_name(&container)?;
+            let container_spec = ContainerSpec::from_container_name(container)?;
 
             info!(
                 "Using container {} with output device {}",
@@ -553,8 +599,11 @@ fn main() -> Result<(), anyhow::Error> {
                 .manifest_for_platform(cli.arch, OperatingSystem::default())?
                 .context("Couldn't find manifest")?;
 
-            let file = File::options().read(true).write(true).open(&output)?;
-            let partition_table = manifest.configuration().try_into()?;
+            let file = File::options().read(true).write(true).open(output)?;
+
+            let table = get_and_validate_partition_table(&cli, &manifest)?;
+            let partition_table: PartitionTable = serde_json::from_value(table)?;
+
             let device = create_and_mount_loop_device(file, &partition_table)?;
             write_manifest_to_dir(&manifest, device.dir.path())?;
 
@@ -591,7 +640,7 @@ fn main() -> Result<(), anyhow::Error> {
             Ok(())
         }
         CliSubcommand::Directory { output, container } => {
-            let container_spec = ContainerSpec::from_container_name(&container)?;
+            let container_spec = ContainerSpec::from_container_name(container)?;
 
             info!(
                 "Using container {} with output directory {}",
@@ -601,7 +650,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             if !output.exists() {
                 debug!("Output directory doesn't exist, creating.");
-                fs::create_dir_all(&output)?;
+                fs::create_dir_all(output)?;
             }
 
             if !output.is_dir() {
@@ -619,7 +668,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .manifest_for_platform(cli.arch, OperatingSystem::default())?
                 .context("Couldn't find manifest")?;
 
-            write_manifest_to_dir(&manifest, &output)?;
+            write_manifest_to_dir(&manifest, output)?;
             Ok(())
         }
     }

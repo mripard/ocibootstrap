@@ -1,3 +1,9 @@
+#![allow(missing_docs)]
+
+use log as _;
+use num_traits as _;
+use test_log::test;
+
 #[test]
 fn div_round_up() {
     assert_eq!(ocibootstrap_part::div_round_up(42, 10), 5);

@@ -15,6 +15,10 @@ use flate2::bufread::GzDecoder;
 use log::debug;
 use serde::{Deserialize, de};
 use serde_json::{StreamDeserializer, Value, de::IoRead};
+use sha256 as _;
+use tar as _;
+use tempfile as _;
+use test_log as _;
 
 fn base64_decode<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
