@@ -11,12 +11,12 @@ use jiff::Timestamp;
 use log::{debug, trace};
 use nix::unistd::Uid;
 use oci_spec::image::{Digest, ImageConfiguration, ImageManifest, Sha256Digest};
-use serde::{de, Deserialize};
+use serde::{Deserialize, de};
 use serde_json::Value;
 use tar_split::TarSplitReader;
 use types::{Architecture, OciBootstrapError, OperatingSystem};
 
-use crate::container::{digest_to_oci_string, ContainerSpec};
+use crate::container::{ContainerSpec, digest_to_oci_string};
 
 fn digest_to_oci_base64(digest: &Digest) -> String {
     // For some reason, it appears the blobs when stored on the FS are regular base64 encoding
