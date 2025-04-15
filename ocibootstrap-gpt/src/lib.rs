@@ -351,6 +351,30 @@ pub const GPT_FLAG_EFI_IGNORE: usize = 1;
 /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
 pub const GPT_FLAG_LEGACY_BIOS_BOOTABLE: usize = 2;
 
+/// Marks the partition for automatic growing of its filesystem when mounted. See the
+/// [UAPI discoverable partition specification][uapi spec], [Partition Attribute Flags][uapi gpt flags]
+/// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt flags]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#partition-attribute-flags
+pub const GPT_FLAG_SD_GROW_FS: usize = 59;
+
+/// Marks the partition to be mounted read-only. See the
+/// [UAPI discoverable partition specification][uapi spec], [Partition Attribute Flags][uapi gpt flags]
+/// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt flags]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#partition-attribute-flags
+pub const GPT_FLAG_SD_READ_ONLY: usize = 60;
+
+/// Marks the partition to be ignored during auto-discovery. See the
+/// [UAPI discoverable partition specification][uapi spec], [Partition Attribute Flags][uapi gpt flags]
+/// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt flags]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#partition-attribute-flags
+pub const GPT_FLAG_SD_NO_AUTODISCOVERY: usize = 63;
+
 /// A GUID Partition Builder Structure
 #[derive(Debug)]
 pub struct GuidPartitionBuilder {
