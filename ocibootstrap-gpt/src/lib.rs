@@ -397,6 +397,12 @@ impl GuidPartitionBuilder {
         self
     }
 
+    /// Sets the given partition flag
+    pub fn set_flag(mut self, bit: usize) -> Self {
+        self.bits.set_bit(bit, true);
+        self
+    }
+
     /// Marks the partition as required for the platform to function. See Table 5.8 of the
     /// [UEFI Specification] for further explanations.
     ///
