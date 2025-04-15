@@ -252,7 +252,7 @@ impl MasterBootRecordPartitionTableBuilder {
         self
     }
 
-    /// Creates a [`GuidPartitionTable`] from our builder
+    /// Creates a [`MasterBootRecordPartitionTable`] from our builder
     #[must_use]
     pub fn build(self) -> MasterBootRecordPartitionTable {
         MasterBootRecordPartitionTable { builder: self }
