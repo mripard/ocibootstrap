@@ -333,6 +333,24 @@ pub struct GuidPartition {
     builder: GuidPartitionBuilder,
 }
 
+/// Marks the partition as required for the platform to function. See Table 5.8 of the
+/// [UEFI Specification] for further explanations.
+///
+/// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
+pub const GPT_FLAG_PLATFORM_REQUIRED: usize = 0;
+
+/// Marks the partition as ignored by the EFI during partition discovery. See Table 5.8 of the
+/// [UEFI Specification] for further explanations.
+///
+/// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
+pub const GPT_FLAG_EFI_IGNORE: usize = 1;
+
+/// Marks the partition as bootable for Legacy BIOS implementations. See Table 5.8 of the
+/// [UEFI Specification] for further explanations.
+///
+/// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
+pub const GPT_FLAG_LEGACY_BIOS_BOOTABLE: usize = 2;
+
 /// A GUID Partition Builder Structure
 #[derive(Debug)]
 pub struct GuidPartitionBuilder {
@@ -409,7 +427,7 @@ impl GuidPartitionBuilder {
     /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn platform_required(mut self, val: bool) -> Self {
-        self.bits.set_bit(0, val);
+        self.bits.set_bit(GPT_FLAG_PLATFORM_REQUIRED, val);
         self
     }
 
@@ -419,7 +437,7 @@ impl GuidPartitionBuilder {
     /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn efi_ignore(mut self, val: bool) -> Self {
-        self.bits.set_bit(1, val);
+        self.bits.set_bit(GPT_FLAG_EFI_IGNORE, val);
         self
     }
 
@@ -429,7 +447,7 @@ impl GuidPartitionBuilder {
     /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn bootable(mut self, val: bool) -> Self {
-        self.bits.set_bit(2, val);
+        self.bits.set_bit(GPT_FLAG_LEGACY_BIOS_BOOTABLE, val);
         self
     }
 
