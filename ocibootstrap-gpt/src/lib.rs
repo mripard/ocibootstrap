@@ -25,18 +25,27 @@ const GPT_PARTITION_HEADER_SIZE_LBA: usize =
     (GPT_PARTITION_NUM * GPT_PARTITION_ENTRY_SIZE) / BLOCK_SIZE;
 
 /// Standard EFI System Partition GUID. See the
-/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// [UAPI discoverable partition specification][uapi spec], [Partition Type Section][uapi gpt types]
 /// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt types]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#defined-partition-type-uuids
 pub const EFI_SYSTEM_PART_GUID: Uuid = uuid!("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
 
 /// Standard Extended Bootloader GUID. See the
-/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// [UAPI discoverable partition specification][uapi spec], [Partition Type Section][uapi gpt types]
 /// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt types]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#defined-partition-type-uuids
 pub const EXTENDED_BOOTLOADER_PART_GUID: Uuid = uuid!("bc13c2ff-59e6-4262-a352-b275fd6f7172");
 
 /// Standard Root Partition GUID for the ARM64/AARCH64 architecture. See the
-/// [UAPI discoverable partition specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+/// [UAPI discoverable partition specification][uapi spec], [Partition Type Section][uapi gpt types]
 /// for further details.
+///
+/// [uapi spec]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+/// [uapi gpt types]: https://uapi-group.org/specifications/specs/discoverable_partitions_specification/#defined-partition-type-uuids
 pub const ROOT_PART_GUID_ARM64: Uuid = uuid!("b921b045-1df0-41c3-af44-4c6f280d3fae");
 
 fn guid_bytes(uuid: &Uuid) -> [u8; 16] {
@@ -388,8 +397,10 @@ impl GuidPartitionBuilder {
         self
     }
 
-    /// Marks the partition as required for the platform to function. See Table 5.8 of the UEFI
-    /// Specification for further explanations.
+    /// Marks the partition as required for the platform to function. See Table 5.8 of the
+    /// [UEFI Specification] for further explanations.
+    ///
+    /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn platform_required(mut self, val: bool) -> Self {
         self.bits.set_bit(0, val);
@@ -397,15 +408,19 @@ impl GuidPartitionBuilder {
     }
 
     /// Marks the partition as ignored by the EFI during partition discovery. See Table 5.8 of the
-    /// UEFI Specification for further explanations.
+    /// [UEFI Specification] for further explanations.
+    ///
+    /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn efi_ignore(mut self, val: bool) -> Self {
         self.bits.set_bit(1, val);
         self
     }
 
-    /// Marks the partition as bootable for Legacy BIOS implementations. See Table 5.8 of the UEFI
-    /// Specification for further explanations.
+    /// Marks the partition as bootable for Legacy BIOS implementations. See Table 5.8 of the
+    /// [UEFI Specification] for further explanations.
+    ///
+    /// [UEFI Specification]: https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
     #[must_use]
     pub fn bootable(mut self, val: bool) -> Self {
         self.bits.set_bit(2, val);
